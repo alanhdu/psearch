@@ -5,7 +5,6 @@ use std::ptr;
 struct XFastMap<T> {
     lss: LevelSearch<T>,
     map: HashMap<u32, ptr::NonNull<LNode<u32, T>>>,
-    values: *mut LNode<u32, T>,
 }
 
 fn upper_bits(key: u32, n: usize) -> u32 {
@@ -16,7 +15,6 @@ fn upper_bits(key: u32, n: usize) -> u32 {
 impl<T> XFastMap<T> {
     fn new() -> XFastMap<T> {
         XFastMap {
-            values: ptr::null_mut(),
             map: HashMap::new(),
             lss: LevelSearch::new(),
         }
@@ -57,6 +55,16 @@ impl<T> XFastMap<T> {
             Descendant::Zero { max } => {
                 let max = unsafe { max.as_ref() };
                 Some(&max.value)
+            }
+        }
+    }
+}
+
+impl<T> Drop for XFastMap<T> {
+    fn drop(&mut self) {
+        for (_key, value) in self.map.drain() {
+            unsafe {
+                drop(Box::from_raw(value.as_ptr()));
             }
         }
     }
@@ -339,10 +347,7 @@ mod test {
                 if j == 0 {
                     assert_eq!(xfast.predecessor(k - 1), None);
                 } else {
-                    assert_eq!(
-                        xfast.predecessor(k - 1),
-                        Some(&sorted[j - 1])
-                    );
+                    assert_eq!(xfast.predecessor(k - 1), Some(&sorted[j - 1]));
                 }
             }
         }
