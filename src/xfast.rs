@@ -2,7 +2,7 @@ use std::collections::{hash_map::Entry, HashMap};
 use std::ptr;
 
 #[derive(Debug, Eq, PartialEq)]
-struct XFastMap<T> {
+pub struct XFastMap<T> {
     lss: LevelSearch<T>,
     map: HashMap<u32, ptr::NonNull<LNode<u32, T>>>,
 }
@@ -13,14 +13,39 @@ fn upper_bits(key: u32, n: usize) -> u32 {
 }
 
 impl<T> XFastMap<T> {
-    fn new() -> XFastMap<T> {
+    pub fn new() -> XFastMap<T> {
         XFastMap {
             map: HashMap::new(),
             lss: LevelSearch::new(),
         }
     }
 
-    fn insert(&mut self, key: u32, value: T) -> Option<T> {
+    /// Clear the map, removing all keys and values
+    pub fn clear(&mut self) {
+        self.lss = LevelSearch::new();
+        for (_key, value) in self.map.drain() {
+            unsafe {
+                drop(Box::from_raw(value.as_ptr()));
+            }
+        }
+    }
+
+    /// Return a reference to the value corresponding to the key
+    pub fn get(&self, key: u32) -> Option<&T> {
+        self.map.get(&key).map(|node| &unsafe { node.as_ref() }.value)
+    }
+
+    /// Return a reference to the value corresponding to the key
+    pub fn get_mut(&mut self, key: u32) -> Option<&mut T> {
+        self.map.get_mut(&key).map(|node| &mut unsafe { node.as_mut() }.value)
+    }
+
+    /// Return a reference to the value corresponding to the key
+    pub fn contains_key(&self, key: u32) -> bool {
+        self.map.contains_key(&key)
+    }
+
+    pub fn insert(&mut self, key: u32, value: T) -> Option<T> {
         match self.map.entry(key) {
             Entry::Occupied(mut o) => {
                 let node = unsafe { o.get_mut().as_mut() };
