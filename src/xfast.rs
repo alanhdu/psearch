@@ -12,6 +12,21 @@ fn upper_bits(key: u32, n: usize) -> u32 {
     key & (0xFFFF_FFFF << (31 - n))
 }
 
+struct Iter<'a, T>(Option<&'a LNode<u32, T>>);
+
+impl<'a, T> Iterator for Iter<'a, T> {
+    type Item = (u32, &'a T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(node) = self.0 {
+            self.0 = unsafe { node.next.as_ref() };
+            Some((node.key, &node.value))
+        } else {
+            None
+        }
+    }
+}
+
 impl<T: std::fmt::Debug> XFastMap<T> {
     pub fn new() -> XFastMap<T> {
         XFastMap {
@@ -80,6 +95,23 @@ impl<T: std::fmt::Debug> XFastMap<T> {
                 }
                 Some(node.value)
             }
+        }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (u32, &T)> {
+        Iter(self.min_node())
+    }
+
+    /// Get the node with the smallest key
+    fn min_node(&self) -> Option<&LNode<u32, T>> {
+        if self.map.is_empty() {
+            return None;
+        }
+
+        match self.lss.longest_descendant(0) {
+            Descendant::One { min } => Some(unsafe { min.as_ref() }),
+            Descendant::Zero { max } => Some(unsafe { max.as_ref() }),
+            _ => unreachable!(),
         }
     }
 
@@ -244,7 +276,17 @@ impl<T: std::fmt::Debug> LevelSearch<T> {
         }
     }
 
+    /// Return the descendant from the deepest matching part of our
+    /// LevelSearch structure.
+    ///
+    /// This executes a binary search, so we expect O(lg w) time, where
+    /// w is the length of our keys.
+    ///
+    /// This requires the LevelSearch structure to have more than one
+    /// node in it, or it will panic
     fn longest_descendant(&self, key: u32) -> &Descendant<T> {
+        debug_assert!(self.root.is_some());
+
         let mut bit = key & (0b1 << 31);
         let mut level = match self.maps[0].get(&bit) {
             None => {
@@ -272,13 +314,12 @@ impl<T: std::fmt::Debug> LevelSearch<T> {
         }
         level
     }
-
-    fn entry(&mut self, key: u32, level: usize) -> Entry<u32, Descendant<T>> {
-        debug_assert!(level < 32);
-        self.maps[level].entry(upper_bits(key, level))
-    }
 }
 
+/// An entry into our LevelSearch structure
+///
+/// This holds pointers to the linked list depending on how the level
+/// trie branches
 #[derive(Debug, Eq, PartialEq)]
 enum Descendant<T> {
     Both,
@@ -383,16 +424,6 @@ mod test {
         assert_eq!(upper_bits(key, 3), 0b1000 << 28);
         assert_eq!(upper_bits(key, 4), 0b10000 << 27);
         assert_eq!(upper_bits(key, 5), 0b100001 << 26);
-    }
-
-    #[test]
-    fn test_lss_empty() {
-        let mut lss: LevelSearch<()> = LevelSearch::new();
-        for i in 0..31 {
-            if let Entry::Occupied(_) = lss.entry(0, i) {
-                panic!("Something was occupied!");
-            }
-        }
     }
 
     #[test]
@@ -504,6 +535,49 @@ mod test {
         unsafe {
             drop(Box::from_raw(p0.as_ptr()));
             drop(Box::from_raw(p1.as_ptr()));
+        }
+    }
+
+    #[test]
+    fn test_xfast_min_node() {
+        let keys: [u32; 33] = [
+            0xcd59c9de, 0x856cb188, 0x6eaaa008, 0xde8db9a9, 0xac3c6ef9,
+            0xaba4ba19, 0xc521efbc, 0x866621f3, 0xed3b37a2, 0xda2a7ce7,
+            0x63df9f0a, 0xb2e4be7c, 0x9c69cb0d, 0x808375c4, 0xbc42de68,
+            0x73f9c015, 0x72903697, 0xb12ad490, 0x9282c1c2, 0x8d4ac30e,
+            0xfb1c49e7, 0x9ffdd800, 0x40fd421f, 0x3aa9e7b1, 0x7a20774e,
+            0xb940e532, 0x749fee0d, 0x0e6c8517, 0x0fa4dc69, 0x205ec45f,
+            0xc8281c71, 0xedd6b0c7, 0,
+        ];
+
+        let mut xfast = XFastMap::new();
+        assert_eq!(xfast.min_node(), None);
+        for (i, key) in keys.iter().enumerate() {
+            assert_eq!(xfast.insert(*key, ()), None);
+            let min = keys[..=i].iter().min().cloned();
+            assert_eq!(xfast.min_node().map(|x| x.key), min);
+        }
+    }
+
+    #[test]
+    fn test_xfast_iter() {
+        let keys: [u32; 33] = [
+            0xcd59c9de, 0x856cb188, 0x6eaaa008, 0xde8db9a9, 0xac3c6ef9,
+            0xaba4ba19, 0xc521efbc, 0x866621f3, 0xed3b37a2, 0xda2a7ce7,
+            0x63df9f0a, 0xb2e4be7c, 0x9c69cb0d, 0x808375c4, 0xbc42de68,
+            0x73f9c015, 0x72903697, 0xb12ad490, 0x9282c1c2, 0x8d4ac30e,
+            0xfb1c49e7, 0x9ffdd800, 0x40fd421f, 0x3aa9e7b1, 0x7a20774e,
+            0xb940e532, 0x749fee0d, 0x0e6c8517, 0x0fa4dc69, 0x205ec45f,
+            0xc8281c71, 0xedd6b0c7, 0,
+        ];
+
+        let mut xfast = XFastMap::new();
+        for (i, key) in keys.iter().enumerate() {
+            assert_eq!(xfast.insert(*key, ()), None);
+            let mut sorted =
+                keys[..=i].iter().map(|k| (*k, &())).collect::<Vec<_>>();
+            sorted.sort();
+            assert_eq!(xfast.iter().collect::<Vec<_>>(), sorted,);
         }
     }
 
