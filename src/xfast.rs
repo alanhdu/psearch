@@ -127,15 +127,9 @@ struct LevelSearch<T> {
 
 impl<T: std::fmt::Debug> LevelSearch<T> {
     fn new() -> LevelSearch<T> {
-        unsafe {
-            let mut lss: LevelSearch<T> = LevelSearch {
-                maps: std::mem::uninitialized(),
-                root: None,
-            };
-            for map in lss.maps.iter_mut() {
-                ptr::write(map, HashMap::new());
-            }
-            lss
+        LevelSearch {
+            maps: arr_macro::arr![HashMap::new(); 31],
+            root: None,
         }
     }
 
