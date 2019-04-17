@@ -438,10 +438,14 @@ mod test {
             Descendant::Zero { max: ptr },
         );
         assert_eq!(lss.maps[30], map);
+
+        unsafe {
+            drop(Box::from_raw(ptr.as_ptr()));
+        }
     }
 
     #[test]
-    fn test_xfast_remove_single_element() {
+    fn test_lss_remove_single_element() {
         let mut lss = LevelSearch::new();
         let p0 = lss.insert(0xF000_0000, b'a');
         lss.remove(unsafe { p0.as_ref() });
@@ -450,10 +454,13 @@ mod test {
         for map in lss.maps.iter() {
             assert!(map.is_empty());
         }
+        unsafe {
+            drop(Box::from_raw(p0.as_ptr()));
+        }
     }
 
     #[test]
-    fn test_xfast_remove_root_both() {
+    fn test_lss_remove_root_both() {
         let mut lss = LevelSearch::new();
         let p0 = lss.insert(0x0000_0000, b'a');
         let p1 = lss.insert(0x8000_0000, b'a');
@@ -473,10 +480,15 @@ mod test {
         for map in lss.maps.iter() {
             assert!(map.is_empty());
         }
+
+        unsafe {
+            drop(Box::from_raw(p0.as_ptr()));
+            drop(Box::from_raw(p1.as_ptr()));
+        }
     }
 
     #[test]
-    fn test_xfast_remove_non_root() {
+    fn test_lss_remove_non_root() {
         let mut lss = LevelSearch::new();
         let p0 = lss.insert(0x0000_0000, b'a');
         let p1 = lss.insert(0x0000_F000, b'a');
@@ -487,6 +499,11 @@ mod test {
         expected.insert(0x0000_0000, Descendant::Zero { max: p0 });
         for map in lss.maps.iter() {
             assert_eq!(map, &expected);
+        }
+
+        unsafe {
+            drop(Box::from_raw(p0.as_ptr()));
+            drop(Box::from_raw(p1.as_ptr()));
         }
     }
 
