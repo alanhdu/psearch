@@ -1,7 +1,8 @@
 use std::collections::{hash_map::Entry, HashMap};
+use std::ops::{Bound, RangeBounds};
 use std::ptr;
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub struct XFastMap<T> {
     lss: LevelSearch<T>,
     map: HashMap<u32, ptr::NonNull<LNode<u32, T>>>,
@@ -13,7 +14,6 @@ fn upper_bits(key: u32, n: usize) -> u32 {
 }
 
 struct Iter<'a, T>(Option<&'a LNode<u32, T>>);
-
 impl<'a, T> Iterator for Iter<'a, T> {
     type Item = (u32, &'a T);
 
@@ -27,12 +27,44 @@ impl<'a, T> Iterator for Iter<'a, T> {
     }
 }
 
+struct Range<'a, T, R>
+where
+    R: RangeBounds<u32>,
+{
+    range: R,
+    node: Option<&'a LNode<u32, T>>,
+}
+impl<'a, T, R> Iterator for Range<'a, T, R>
+where
+    R: RangeBounds<u32>,
+{
+    type Item = (u32, &'a T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(node) = self.node {
+            if self.range.contains(&node.key) {
+                self.node = unsafe { node.next.as_ref() };
+                Some((node.key, &node.value))
+            } else {
+                self.node = None;
+                None
+            }
+        } else {
+            None
+        }
+    }
+}
+
 impl<T: std::fmt::Debug> XFastMap<T> {
     pub fn new() -> XFastMap<T> {
         XFastMap {
             map: HashMap::new(),
             lss: LevelSearch::new(),
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
     }
 
     /// Clear the map, removing all keys and values
@@ -102,6 +134,28 @@ impl<T: std::fmt::Debug> XFastMap<T> {
         Iter(self.min_node())
     }
 
+    pub fn range(
+        &self,
+        range: impl RangeBounds<u32>,
+    ) -> impl Iterator<Item = (u32, &T)> {
+        if self.is_empty() {
+            return Range { range, node: None };
+        }
+
+        let node = match range.start_bound() {
+            Bound::Unbounded => self.min_node(),
+            Bound::Included(&key) => self.successor(key),
+            Bound::Excluded(&key) => {
+                if key == u32::max_value() {
+                    None
+                } else {
+                    self.successor(key + 1)
+                }
+            }
+        };
+        Range { range, node: node }
+    }
+
     /// Get the node with the smallest key
     fn min_node(&self) -> Option<&LNode<u32, T>> {
         if self.map.is_empty() {
@@ -115,7 +169,7 @@ impl<T: std::fmt::Debug> XFastMap<T> {
         }
     }
 
-    fn predecessor(&self, key: u32) -> Option<&T> {
+    fn predecessor(&self, key: u32) -> Option<&LNode<u32, T>> {
         // If we are empty, short-circuit evaluation
         if self.map.is_empty() {
             return None;
@@ -124,18 +178,41 @@ impl<T: std::fmt::Debug> XFastMap<T> {
         if let Some(node) = self.map.get(&key) {
             let node = unsafe { node.as_ref() };
             debug_assert!(node.key == key);
-            return Some(&node.value);
+            return Some(&node);
         }
-
         match self.lss.longest_descendant(key) {
             Descendant::Both => unreachable!(),
             Descendant::One { min } => {
                 let prev = unsafe { min.as_ref().prev.as_ref() }?;
-                Some(&prev.value)
+                Some(&prev)
             }
             Descendant::Zero { max } => {
                 let max = unsafe { max.as_ref() };
-                Some(&max.value)
+                Some(&max)
+            }
+        }
+    }
+
+    fn successor(&self, key: u32) -> Option<&LNode<u32, T>> {
+        // If we are empty, short-circuit evaluation
+        if self.map.is_empty() {
+            return None;
+        }
+        // Special-case: if key is in the map
+        if let Some(node) = self.map.get(&key) {
+            let node = unsafe { node.as_ref() };
+            debug_assert!(node.key == key);
+            return Some(&node);
+        }
+        match self.lss.longest_descendant(key) {
+            Descendant::Both => unreachable!(),
+            Descendant::One { min } => {
+                let prev = unsafe { min.as_ref() };
+                Some(&prev)
+            }
+            Descendant::Zero { max } => {
+                let max = unsafe { max.as_ref().next.as_ref() }?;
+                Some(&max)
             }
         }
     }
@@ -561,14 +638,14 @@ mod test {
 
     #[test]
     fn test_xfast_iter() {
-        let keys: [u32; 33] = [
+        let keys: [u32; 34] = [
             0xcd59c9de, 0x856cb188, 0x6eaaa008, 0xde8db9a9, 0xac3c6ef9,
             0xaba4ba19, 0xc521efbc, 0x866621f3, 0xed3b37a2, 0xda2a7ce7,
             0x63df9f0a, 0xb2e4be7c, 0x9c69cb0d, 0x808375c4, 0xbc42de68,
             0x73f9c015, 0x72903697, 0xb12ad490, 0x9282c1c2, 0x8d4ac30e,
             0xfb1c49e7, 0x9ffdd800, 0x40fd421f, 0x3aa9e7b1, 0x7a20774e,
             0xb940e532, 0x749fee0d, 0x0e6c8517, 0x0fa4dc69, 0x205ec45f,
-            0xc8281c71, 0xedd6b0c7, 0,
+            0xc8281c71, 0xedd6b0c7, 0, 0xFFFFFFFF,
         ];
 
         let mut xfast = XFastMap::new();
@@ -578,6 +655,112 @@ mod test {
                 keys[..=i].iter().map(|k| (*k, &())).collect::<Vec<_>>();
             sorted.sort();
             assert_eq!(xfast.iter().collect::<Vec<_>>(), sorted,);
+        }
+    }
+
+    #[test]
+    fn test_xfast_range() {
+        let mut keys: [u32; 34] = [
+            0xcd59c9de, 0x856cb188, 0x6eaaa008, 0xde8db9a9, 0xac3c6ef9,
+            0xaba4ba19, 0xc521efbc, 0x866621f3, 0xed3b37a2, 0xda2a7ce7,
+            0x63df9f0a, 0xb2e4be7c, 0x9c69cb0d, 0x808375c4, 0xbc42de68,
+            0x73f9c015, 0x72903697, 0xb12ad490, 0x9282c1c2, 0x8d4ac30e,
+            0xfb1c49e7, 0x9ffdd800, 0x40fd421f, 0x3aa9e7b1, 0x7a20774e,
+            0xb940e532, 0x749fee0d, 0x0e6c8517, 0x0fa4dc69, 0x205ec45f,
+            0xc8281c71, 0xedd6b0c7, 0, 0xFFFFFFFF,
+        ];
+
+        let mut xfast = XFastMap::new();
+        for key in keys.iter().cloned() {
+            assert_eq!(xfast.insert(key, ()), None);
+        }
+
+        keys.sort();
+        for i in 0..keys.len() {
+            // (Unbounded, Exclusive)
+            let range = xfast.range(..keys[i]);
+            assert_eq!(
+                &range.map(|k| k.0).collect::<Vec<_>>() as &[u32],
+                &keys[..i]
+            );
+
+            // (Unbounded, Inclusive)
+            let range = xfast.range(..=keys[i]);
+            assert_eq!(
+                &range.map(|k| k.0).collect::<Vec<_>>() as &[u32],
+                &keys[..=i]
+            );
+
+            // (Inclusive, Bounded)
+            let range = xfast.range(keys[i]..);
+            assert_eq!(
+                &range.map(|k| k.0).collect::<Vec<_>>() as &[u32],
+                &keys[i..]
+            );
+
+            for j in i..keys.len() {
+                // (Inclusive, Exclusive)
+                let range = xfast.range(keys[i]..keys[j]);
+                assert_eq!(
+                    &range.map(|k| k.0).collect::<Vec<_>>() as &[u32],
+                    &keys[i..j]
+                );
+
+                // (Inclusive, Inclusive)
+                let range = xfast.range(keys[i]..=keys[j]);
+                assert_eq!(
+                    &range.map(|k| k.0).collect::<Vec<_>>() as &[u32],
+                    &keys[i..=j]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_xfast_predecessor_successor() {
+        let keys: [u32; 34] = [
+            0xcd59c9de, 0x856cb188, 0x6eaaa008, 0xde8db9a9, 0xac3c6ef9,
+            0xaba4ba19, 0xc521efbc, 0x866621f3, 0xed3b37a2, 0xda2a7ce7,
+            0x63df9f0a, 0xb2e4be7c, 0x9c69cb0d, 0x808375c4, 0xbc42de68,
+            0x73f9c015, 0x72903697, 0xb12ad490, 0x9282c1c2, 0x8d4ac30e,
+            0xfb1c49e7, 0x9ffdd800, 0x40fd421f, 0x3aa9e7b1, 0x7a20774e,
+            0xb940e532, 0x749fee0d, 0x0e6c8517, 0x0fa4dc69, 0x205ec45f,
+            0xc8281c71, 0xedd6b0c7, 0, 0xFFFFFFFF,
+        ];
+
+        let mut xfast = XFastMap::new();
+        for (i, key) in keys.iter().enumerate() {
+            assert_eq!(xfast.insert(*key, ()), None);
+
+            let mut sorted = keys[..=i].iter().collect::<Vec<_>>();
+            sorted.sort();
+            for (j, ki) in sorted.iter().cloned().enumerate() {
+                if j > 0 {
+                    assert_eq!(
+                        xfast.predecessor(ki - 1),
+                        xfast
+                            .map
+                            .get(sorted[j - 1])
+                            .map(|ptr| unsafe { ptr.as_ref() })
+                    );
+                }
+
+                assert_eq!(xfast.predecessor(*ki), xfast.successor(*ki));
+                assert_eq!(
+                    xfast.predecessor(*ki),
+                    xfast.map.get(ki).map(|ptr| unsafe { ptr.as_ref() })
+                );
+
+                if j + 1 < sorted.len() {
+                    assert_eq!(
+                        xfast.successor(ki + 1),
+                        xfast
+                            .map
+                            .get(sorted[j + 1])
+                            .map(|ptr| unsafe { ptr.as_ref() })
+                    );
+                }
+            }
         }
     }
 
@@ -596,7 +779,7 @@ mod test {
         let mut xfast = XFastMap::new();
         // Empty map, no predecessor
         for key in keys.iter() {
-            assert_eq!(xfast.predecessor(*key), None);
+            assert!(xfast.predecessor(*key).is_none());
         }
 
         for (i, key) in keys.iter().enumerate() {
@@ -606,20 +789,32 @@ mod test {
             assert_eq!(xfast.insert(key, value), Some(0));
 
             // Predecessor works
-            assert_eq!(xfast.predecessor(key), Some(&value));
+            assert_eq!(
+                xfast.predecessor(key).map(|node| node.value),
+                Some(value)
+            );
 
             // Check that predecessor works for each sorted element
             let mut sorted = (0..=i as u32).collect::<Vec<_>>();
             sorted.sort_unstable_by_key(|k| keys[*k as usize]);
-            for (j, ki) in sorted.iter().enumerate() {
-                let k = keys[*ki as usize];
-                assert_eq!(xfast.predecessor(k), Some(ki));
-                assert_eq!(xfast.predecessor(k + 1), Some(ki));
+            for (j, ki) in sorted.iter().cloned().enumerate() {
+                let k = keys[ki as usize];
+                assert_eq!(
+                    xfast.predecessor(k).map(|node| node.value),
+                    Some(ki)
+                );
+                assert_eq!(
+                    xfast.predecessor(k + 1).map(|node| node.value),
+                    Some(ki)
+                );
 
                 if j == 0 {
-                    assert_eq!(xfast.predecessor(k - 1), None);
+                    assert!(xfast.predecessor(k - 1).is_none());
                 } else {
-                    assert_eq!(xfast.predecessor(k - 1), Some(&sorted[j - 1]));
+                    assert_eq!(
+                        xfast.predecessor(k - 1).map(|node| node.value),
+                        Some(sorted[j - 1])
+                    );
                 }
             }
         }
@@ -650,15 +845,24 @@ mod test {
             // Check that predecessor works for each sorted element
             let mut sorted = (1 + i as u32..32).collect::<Vec<_>>();
             sorted.sort_unstable_by_key(|k| keys[*k as usize]);
-            for (j, ki) in sorted.iter().enumerate() {
-                let k = keys[*ki as usize];
-                assert_eq!(xfast.predecessor(k), Some(ki));
-                assert_eq!(xfast.predecessor(k + 1), Some(ki));
+            for (j, ki) in sorted.iter().cloned().enumerate() {
+                let k = keys[ki as usize];
+                assert_eq!(
+                    xfast.predecessor(k).map(|node| node.value),
+                    Some(ki)
+                );
+                assert_eq!(
+                    xfast.predecessor(k + 1).map(|node| node.value),
+                    Some(ki)
+                );
 
                 if j == 0 {
-                    assert_eq!(xfast.predecessor(k - 1), None);
+                    assert!(xfast.predecessor(k - 1).is_none());
                 } else {
-                    assert_eq!(xfast.predecessor(k - 1), Some(&sorted[j - 1]));
+                    assert_eq!(
+                        xfast.predecessor(k - 1).map(|node| node.value),
+                        Some(sorted[j - 1])
+                    );
                 }
             }
         }
