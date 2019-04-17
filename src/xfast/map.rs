@@ -13,7 +13,7 @@ fn upper_bits(key: u32, n: usize) -> u32 {
     key & (0xFFFF_FFFF << (31 - n))
 }
 
-struct Iter<'a, T>(Option<&'a LNode<u32, T>>);
+pub(super) struct Iter<'a, T>(Option<&'a LNode<u32, T>>);
 impl<'a, T> Iterator for Iter<'a, T> {
     type Item = (u32, &'a T);
 
@@ -27,7 +27,7 @@ impl<'a, T> Iterator for Iter<'a, T> {
     }
 }
 
-struct Range<'a, T, R>
+pub(super) struct Range<'a, T, R>
 where
     R: RangeBounds<u32>,
 {
@@ -65,6 +65,10 @@ impl<T: std::fmt::Debug> XFastMap<T> {
 
     pub fn is_empty(&self) -> bool {
         self.map.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.map.len()
     }
 
     /// Clear the map, removing all keys and values
@@ -153,7 +157,7 @@ impl<T: std::fmt::Debug> XFastMap<T> {
                 }
             }
         };
-        Range { range, node: node }
+        Range { range, node }
     }
 
     /// Get the node with the smallest key
@@ -229,7 +233,7 @@ impl<T> Drop for XFastMap<T> {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-struct LevelSearch<T> {
+pub(super) struct LevelSearch<T> {
     maps: [HashMap<u32, Descendant<T>>; 31],
     root: Option<Descendant<T>>,
 }
