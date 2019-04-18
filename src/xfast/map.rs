@@ -1,6 +1,8 @@
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::hash_map::Entry;
 use std::ops::{Bound, RangeBounds};
 use std::ptr;
+
+use fnv::FnvHashMap as HashMap;
 
 #[derive(Debug)]
 pub struct XFastMap<T> {
@@ -64,7 +66,7 @@ where
 impl<T: std::fmt::Debug> XFastMap<T> {
     pub fn new() -> XFastMap<T> {
         XFastMap {
-            map: HashMap::new(),
+            map: HashMap::default(),
             lss: LevelSearch::new(),
         }
     }
@@ -179,6 +181,7 @@ impl<T: std::fmt::Debug> XFastMap<T> {
         }
     }
 
+    #[cfg(test)]
     fn predecessor(&self, key: u32) -> Option<&LNode<u32, T>> {
         // If we are empty, short-circuit evaluation
         if self.map.is_empty() {
@@ -247,7 +250,7 @@ struct LevelSearch<T> {
 impl<T: std::fmt::Debug> LevelSearch<T> {
     fn new() -> LevelSearch<T> {
         LevelSearch {
-            maps: arr_macro::arr![HashMap::new(); 31],
+            maps: arr_macro::arr![HashMap::default(); 31],
             root: None,
         }
     }
@@ -529,7 +532,7 @@ mod test {
 
         assert_eq!(lss.root, Some(Descendant::One { min: ptr }));
 
-        let mut map = HashMap::new();
+        let mut map = HashMap::default();
         map.insert(
             0b10000000000000000000000000000000,
             Descendant::One { min: ptr },
@@ -587,7 +590,7 @@ mod test {
         lss.remove(unsafe { p0.as_ref() });
         assert_eq!(lss.root, Some(Descendant::One { min: p1 }));
 
-        let mut expected = HashMap::new();
+        let mut expected = HashMap::default();
         expected.insert(0x8000_0000, Descendant::Zero { max: p1 });
         for map in lss.maps.iter() {
             assert_eq!(map, &expected);
@@ -613,7 +616,7 @@ mod test {
         lss.remove(unsafe { p1.as_ref() });
 
         assert_eq!(lss.root, Some(Descendant::Zero { max: p0 }));
-        let mut expected = HashMap::new();
+        let mut expected = HashMap::default();
         expected.insert(0x0000_0000, Descendant::Zero { max: p0 });
         for map in lss.maps.iter() {
             assert_eq!(map, &expected);
