@@ -55,4 +55,12 @@ impl XFastSet {
     ) -> impl Iterator<Item = u32> + 'a {
         self.map.range(range).map(|k| k.0)
     }
+
+    pub fn predecessor(&self, key: u32) -> Option<u32> {
+        self.map.predecessor(key).map(|x| x.0)
+    }
+
+    pub fn successor(&self, key: u32) -> Option<u32> {
+        self.map.successor(key).map(|x| x.0)
+    }
 }

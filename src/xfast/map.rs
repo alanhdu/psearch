@@ -222,10 +222,12 @@ impl<T> LevelSearch<T> {
             match entry {
                 HashEntry::Vacant(v) => {
                     let mut desc = Descendant::new();
-                    desc.mins.insert(byte, unsafe {
-                        ptr::NonNull::new_unchecked(node)
+                    desc.bounds.insert(byte, unsafe {
+                        (
+                            ptr::NonNull::new_unchecked(node),
+                            ptr::NonNull::new_unchecked(node),
+                        )
                     });
-                    desc.max = node;
                     v.insert(desc);
                 }
                 HashEntry::Occupied(mut o) => {
@@ -303,43 +305,69 @@ impl<T> LevelSearch<T> {
 
 #[derive(Debug, Eq, PartialEq)]
 struct Descendant<T> {
-    max: *mut LNode<T>,
-    mins: BTreeMap<u8, ptr::NonNull<LNode<T>>>,
+    bounds: BTreeMap<u8, (ptr::NonNull<LNode<T>>, ptr::NonNull<LNode<T>>)>,
 }
 
 impl<T> Descendant<T> {
     fn new() -> Descendant<T> {
         Descendant {
-            max: ptr::null_mut(),
-            mins: BTreeMap::new(),
+            bounds: BTreeMap::new(),
         }
     }
 
     fn is_empty(&self) -> bool {
-        debug_assert_eq!(self.max.is_null(), self.mins.is_empty());
-        self.max.is_null()
+        self.bounds.is_empty()
     }
 
+    /// Find the predecessor of byte, assuming byte has at most 1 child
     fn predecessor(&self, byte: u8) -> Option<&LNode<T>> {
-        self.mins
+        self.bounds
             .range(0..=byte)
             .rev()
             .next()
-            .map(|(_, node)| unsafe { node.as_ref() })
+            .map(|(&b, (min, max))| {
+                if b == byte {
+                    debug_assert_eq!(min, max);
+                }
+                unsafe { max.as_ref() }
+            })
     }
 
+    /// Find the predecessor of byte, assuming byte has at most 1 child
+    fn predecessor_mut(&mut self, byte: u8) -> Option<&mut LNode<T>> {
+        self.bounds
+            .range_mut(0..=byte)
+            .rev()
+            .next()
+            .map(|(&b, (min, max))| {
+                if b == byte {
+                    debug_assert_eq!(min, max);
+                }
+                unsafe { max.as_mut() }
+            })
+    }
+
+    /// Find the successor of byte, assuming byte has at most 1 child
     fn successor_mut(&mut self, byte: u8) -> Option<&mut LNode<T>> {
-        self.mins
+        self.bounds
             .range_mut(byte..)
             .next()
-            .map(|(_, node)| unsafe { node.as_mut() })
+            .map(|(&b, (min, max))| {
+                if b == byte {
+                    debug_assert_eq!(min, max);
+                }
+                unsafe { min.as_mut() }
+            })
     }
 
+    /// Find the successor of byte, assuming byte has at most 1 child
     fn successor(&self, byte: u8) -> Option<&LNode<T>> {
-        self.mins
-            .range(byte..)
-            .next()
-            .map(|(_, node)| unsafe { node.as_ref() })
+        self.bounds.range(byte..).next().map(|(&b, (min, max))| {
+            if b == byte {
+                debug_assert_eq!(min, max);
+            }
+            unsafe { min.as_ref() }
+        })
     }
 
     /// If this is the "lowest" Descendant matching the prefix, insert
@@ -348,73 +376,52 @@ impl<T> Descendant<T> {
         if let Some(next) = self.successor_mut(byte) {
             debug_assert!(next.key > node.key);
             node.set_next(next);
-        } else if let Some(prev) = unsafe { self.max.as_mut() } {
+        } else if let Some(prev) = self.predecessor_mut(byte) {
             debug_assert!(prev.key < node.key);
             node.set_prev(prev);
         }
     }
 
     fn merge(&mut self, byte: u8, node: &mut LNode<T>) {
-        match self.mins.entry(byte) {
+        match self.bounds.entry(byte) {
             BTreeEntry::Vacant(v) => {
-                v.insert(unsafe { ptr::NonNull::new_unchecked(node) });
+                v.insert(unsafe {
+                    (
+                        ptr::NonNull::new_unchecked(node),
+                        ptr::NonNull::new_unchecked(node),
+                    )
+                });
             }
             BTreeEntry::Occupied(mut o) => {
-                let min = unsafe { o.get_mut().as_mut() };
-                if min.key > node.key {
-                    o.insert(unsafe { ptr::NonNull::new_unchecked(node) });
-                    // min.key > node.key, so node cannot be the max
-                    return;
+                let (min, max) = o.get_mut();
+                if node.key < unsafe { min.as_ref() }.key {
+                    *min = ptr::NonNull::from(node);
+                } else if node.key > unsafe { max.as_ref() }.key {
+                    *max = ptr::NonNull::from(node);
                 }
             }
-        }
-        match unsafe { self.max.as_mut() } {
-            Some(max) => {
-                if max.key < node.key {
-                    self.max = node
-                }
-            }
-            None => self.max = node,
         }
     }
 
     /// Remove the byte/node pair from the descendant pointers
     fn remove(&mut self, byte: u8, node: &LNode<T>) {
-        let mut range = self.mins.range_mut(byte..);
-        if let Some(n) = range.next() {
-            debug_assert_eq!(*n.0, byte);
-            if ptr::eq(n.1.as_ptr(), node) {
-                match (range.next(), unsafe { node.next.as_ref() }) {
-                    (_, None) => {
-                        debug_assert!(ptr::eq(self.max, node));
-                        self.mins.remove(&byte);
+        match self.bounds.entry(byte) {
+            BTreeEntry::Occupied(mut o) => {
+                let (min, max) = o.get_mut();
+
+                if ptr::eq(min.as_ptr(), node) {
+                    if ptr::eq(max.as_ptr(), node) {
+                        // (min == max == node) => node is only entry
+                        o.remove();
+                    } else {
+                        *min =
+                            unsafe { ptr::NonNull::new_unchecked(node.next) };
                     }
-                    (None, Some(next)) => {
-                        // self.max != null, because (byte, node) exists
-                        let max = unsafe { self.max.as_ref().unwrap() };
-                        if next.key < max.key {
-                            self.mins.insert(byte, ptr::NonNull::from(next));
-                        } else {
-                            self.mins.remove(&byte);
-                        }
-                    }
-                    (Some((_, successor)), Some(next)) => {
-                        if next.key < unsafe { successor.as_ref() }.key {
-                            self.mins.insert(byte, ptr::NonNull::from(next));
-                        } else {
-                            self.mins.remove(&byte);
-                        }
-                    }
+                } else if ptr::eq(max.as_ptr(), node) {
+                    *max = unsafe { ptr::NonNull::new_unchecked(node.prev) };
                 }
             }
-        }
-
-        if ptr::eq(self.max, node) {
-            if self.mins.is_empty() {
-                self.max = ptr::null_mut();
-            } else {
-                self.max = node.prev;
-            }
+            _ => unreachable!(),
         }
     }
 }
@@ -475,24 +482,49 @@ mod test {
         let ptr = &mut node as *mut _;
         let nonnull = ptr::NonNull::new(ptr).unwrap();
 
-        assert_eq!(lss.l0.max, ptr);
-        assert_eq!(lss.l0.mins.len(), 1);
-        assert_eq!(lss.l0.mins[&0xde].as_ptr(), ptr);
+        assert_eq!(
+            lss.l0.bounds,
+            BTreeMap::from_iter(vec![(0xde, (nonnull, nonnull)),])
+        );
 
-        assert_eq!(lss.l1.len(), 1);
-        let desc = &lss.l1[&[0xde]];
-        assert_eq!(desc.max, ptr);
-        assert_eq!(desc.mins, BTreeMap::from_iter(vec![(0xad, nonnull)]));
+        assert_eq!(
+            lss.l1,
+            HashMap::from_iter(vec![(
+                [0xde],
+                Descendant {
+                    bounds: BTreeMap::from_iter(vec![(
+                        0xad,
+                        (nonnull, nonnull)
+                    ),])
+                }
+            )])
+        );
 
-        assert_eq!(lss.l2.len(), 1);
-        let desc = &lss.l2[&[0xde, 0xad]];
-        assert_eq!(desc.max, ptr);
-        assert_eq!(desc.mins, BTreeMap::from_iter(vec![(0xbe, nonnull)]));
+        assert_eq!(
+            lss.l2,
+            HashMap::from_iter(vec![(
+                [0xde, 0xad],
+                Descendant {
+                    bounds: BTreeMap::from_iter(vec![(
+                        0xbe,
+                        (nonnull, nonnull)
+                    ),])
+                }
+            )])
+        );
 
-        assert_eq!(lss.l3.len(), 1);
-        let desc = &lss.l3[&[0xde, 0xad, 0xbe]];
-        assert_eq!(desc.max, ptr);
-        assert_eq!(desc.mins, BTreeMap::from_iter(vec![(0xef, nonnull)]));
+        assert_eq!(
+            lss.l3,
+            HashMap::from_iter(vec![(
+                [0xde, 0xad, 0xbe],
+                Descendant {
+                    bounds: BTreeMap::from_iter(vec![(
+                        0xef,
+                        (nonnull, nonnull)
+                    ),])
+                }
+            )])
+        );
     }
 
     #[test]
@@ -528,52 +560,46 @@ mod test {
         let nn4 = ptr::NonNull::new(p4).unwrap();
 
         assert_eq!(
-            lss.l0,
-            Descendant {
-                max: p4,
-                mins: BTreeMap::from_iter(vec![(0xba, nn1), (0xde, nn2)])
-            }
+            lss.l0.bounds,
+            BTreeMap::from_iter(vec![(0xba, (nn1, nn1)), (0xde, (nn2, nn4))])
         );
         assert_eq!(
             lss.l1,
             HashMap::from_iter(vec![
                 (
-                    [0xde],
+                    [0xba],
                     Descendant {
-                        max: p4,
-                        mins: BTreeMap::from_iter(vec![(0xad, nn2)])
+                        bounds: BTreeMap::from_iter(vec![(0xad, (nn1, nn1))])
                     }
                 ),
                 (
-                    [0xba],
+                    [0xde],
                     Descendant {
-                        max: p1,
-                        mins: BTreeMap::from_iter(vec![(0xad, nn1)])
+                        bounds: BTreeMap::from_iter(vec![(0xad, (nn2, nn4))])
                     }
                 )
             ])
         );
+
         assert_eq!(
             lss.l2,
             HashMap::from_iter(vec![
                 (
-                    [0xde, 0xad],
+                    [0xba, 0xad],
                     Descendant {
-                        max: p4,
-                        mins: BTreeMap::from_iter(vec![
-                            (0xbe, nn2),
-                            (0xc0, nn3)
-                        ])
+                        bounds: BTreeMap::from_iter(vec![(0xf0, (nn1, nn1))])
                     }
                 ),
                 (
-                    [0xba, 0xad],
+                    [0xde, 0xad],
                     Descendant {
-                        max: p1,
-                        mins: BTreeMap::from_iter(vec![(0xf0, nn1)])
+                        bounds: BTreeMap::from_iter(vec![
+                            (0xbe, (nn2, nn2)),
+                            (0xc0, (nn3, nn4)),
+                        ])
                     }
                 )
-            ],)
+            ])
         );
         assert_eq!(
             lss.l3,
@@ -581,28 +607,25 @@ mod test {
                 (
                     [0xba, 0xad, 0xf0],
                     Descendant {
-                        max: p1,
-                        mins: BTreeMap::from_iter(vec![(0x0d, nn1)])
+                        bounds: BTreeMap::from_iter(vec![(0x0d, (nn1, nn1))])
                     }
                 ),
                 (
                     [0xde, 0xad, 0xbe],
                     Descendant {
-                        max: p2,
-                        mins: BTreeMap::from_iter(vec![(0xef, nn2)])
+                        bounds: BTreeMap::from_iter(vec![(0xef, (nn2, nn2))])
                     }
                 ),
                 (
                     [0xde, 0xad, 0xc0],
                     Descendant {
-                        max: p4,
-                        mins: BTreeMap::from_iter(vec![
-                            (0xde, nn3),
-                            (0xfe, nn4)
+                        bounds: BTreeMap::from_iter(vec![
+                            (0xde, (nn3, nn3)),
+                            (0xfe, (nn4, nn4)),
                         ])
                     }
                 ),
-            ]),
+            ])
         );
     }
 
