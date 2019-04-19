@@ -1,10 +1,12 @@
 use std::collections::btree_map::Entry as BTreeEntry;
-use std::collections::hash_map::Entry as HashEntry;
 use std::collections::BTreeMap;
 use std::ops::{Bound, RangeBounds};
 use std::ptr;
 
-use fnv::FnvHashMap as HashMap;
+use fnv::FnvBuildHasher;
+use hashbrown::hash_map::Entry as HashEntry;
+
+type HashMap<K, V> = hashbrown::HashMap<K, V, FnvBuildHasher>;
 
 pub struct XFastMap<T> {
     lss: LevelSearch<T>,
@@ -214,10 +216,10 @@ impl<T> LevelSearch<T> {
 
         self.l0.merge(bytes[0], node);
 
-        fn insert_into_entry<T, K>(
+        fn insert_into_entry<T, K: std::hash::Hash>(
             byte: u8,
             node: &mut LNode<T>,
-            entry: HashEntry<K, Descendant<T>>,
+            entry: HashEntry<K, Descendant<T>, FnvBuildHasher>,
         ) {
             match entry {
                 HashEntry::Vacant(v) => {
