@@ -42,7 +42,13 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(node) = self.node {
-            if self.range.contains(&node.key) {
+            let contains = match self.range.end_bound() {
+                Bound::Unbounded => true,
+                Bound::Excluded(upper) => node.key < *upper,
+                Bound::Included(upper) => node.key <= *upper,
+            };
+
+            if contains {
                 self.node = unsafe { node.next.as_ref() };
                 Some((node.key, &node.value))
             } else {
@@ -233,7 +239,7 @@ impl<T> Drop for XFastMap<T> {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub(super) struct LevelSearch<T> {
+struct LevelSearch<T> {
     maps: [HashMap<u32, Descendant<T>>; 31],
     root: Option<Descendant<T>>,
 }
@@ -480,7 +486,7 @@ impl<T> Descendant<T> {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-struct LNode<K: Eq + PartialEq, V> {
+pub(super) struct LNode<K: Eq + PartialEq, V> {
     key: K,
     value: V,
 
