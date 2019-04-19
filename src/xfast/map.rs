@@ -1,21 +1,17 @@
-use std::collections::hash_map::Entry;
+use std::collections::btree_map::Entry as BTreeEntry;
+use std::collections::hash_map::Entry as HashEntry;
+use std::collections::BTreeMap;
 use std::ops::{Bound, RangeBounds};
 use std::ptr;
 
 use fnv::FnvHashMap as HashMap;
 
-#[derive(Debug)]
 pub struct XFastMap<T> {
     lss: LevelSearch<T>,
-    map: HashMap<u32, ptr::NonNull<LNode<u32, T>>>,
+    map: HashMap<u32, Box<LNode<T>>>,
 }
 
-fn upper_bits(key: u32, n: usize) -> u32 {
-    // Extract upper bits from key
-    key & (0xFFFF_FFFF << (31 - n))
-}
-
-pub(super) struct Iter<'a, T>(Option<&'a LNode<u32, T>>);
+pub(super) struct Iter<'a, T>(Option<&'a LNode<T>>);
 impl<'a, T> Iterator for Iter<'a, T> {
     type Item = (u32, &'a T);
 
@@ -34,7 +30,7 @@ where
     R: RangeBounds<u32>,
 {
     range: R,
-    node: Option<&'a LNode<u32, T>>,
+    node: Option<&'a LNode<T>>,
 }
 impl<'a, T, R> Iterator for Range<'a, T, R>
 where
@@ -63,11 +59,11 @@ where
     }
 }
 
-impl<T: std::fmt::Debug> XFastMap<T> {
+impl<T> XFastMap<T> {
     pub fn new() -> XFastMap<T> {
         XFastMap {
-            map: HashMap::default(),
             lss: LevelSearch::new(),
+            map: HashMap::default(),
         }
     }
 
@@ -81,41 +77,28 @@ impl<T: std::fmt::Debug> XFastMap<T> {
 
     /// Clear the map, removing all keys and values
     pub fn clear(&mut self) {
-        self.lss = LevelSearch::new();
-        for (_key, value) in self.map.drain() {
-            unsafe {
-                drop(Box::from_raw(value.as_ptr()));
-            }
-        }
+        self.lss.clear();
+        self.map.clear();
     }
 
     /// Return a reference to the value corresponding to the key
     pub fn get(&self, key: u32) -> Option<&T> {
-        self.map
-            .get(&key)
-            .map(|node| &unsafe { node.as_ref() }.value)
+        self.map.get(&key).map(|node| &node.value)
     }
 
-    /// Return a reference to the value corresponding to the key
-    pub fn get_mut(&mut self, key: u32) -> Option<&mut T> {
-        self.map
-            .get_mut(&key)
-            .map(|node| &mut unsafe { node.as_mut() }.value)
-    }
-
-    /// Return a reference to the value corresponding to the key
     pub fn contains_key(&self, key: u32) -> bool {
         self.map.contains_key(&key)
     }
 
     pub fn insert(&mut self, key: u32, value: T) -> Option<T> {
         match self.map.entry(key) {
-            Entry::Occupied(mut o) => {
-                let node = unsafe { o.get_mut().as_mut() };
+            HashEntry::Occupied(mut o) => {
+                let node = o.get_mut().as_mut();
                 Some(std::mem::replace(&mut node.value, value))
             }
-            Entry::Vacant(v) => {
-                let node = self.lss.insert(key, value);
+            HashEntry::Vacant(v) => {
+                let mut node = Box::new(LNode::new(key, value));
+                self.lss.insert(&mut node);
                 v.insert(node);
                 None
             }
@@ -124,10 +107,9 @@ impl<T: std::fmt::Debug> XFastMap<T> {
 
     pub fn remove(&mut self, key: u32) -> Option<T> {
         match self.map.entry(key) {
-            Entry::Vacant(_) => None,
-            Entry::Occupied(o) => {
-                let mut ptr = o.remove();
-                let node = unsafe { Box::from_raw(ptr.as_mut()) };
+            HashEntry::Vacant(_) => None,
+            HashEntry::Occupied(o) => {
+                let node = o.remove();
                 self.lss.remove(&node);
                 unsafe {
                     if let Some(prev) = node.prev.as_mut() {
@@ -143,7 +125,7 @@ impl<T: std::fmt::Debug> XFastMap<T> {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (u32, &T)> {
-        Iter(self.min_node())
+        Iter(self.lss.min())
     }
 
     pub fn range(
@@ -155,498 +137,473 @@ impl<T: std::fmt::Debug> XFastMap<T> {
         }
 
         let node = match range.start_bound() {
-            Bound::Unbounded => self.min_node(),
-            Bound::Included(&key) => self.successor(key),
+            Bound::Unbounded => self.lss.min(),
+            Bound::Included(&key) => self.lss.successor(key),
             Bound::Excluded(&key) => {
                 if key == u32::max_value() {
                     None
                 } else {
-                    self.successor(key + 1)
+                    self.lss.successor(key + 1)
                 }
             }
         };
         Range { range, node }
     }
 
-    /// Get the node with the smallest key
-    fn min_node(&self) -> Option<&LNode<u32, T>> {
-        if self.map.is_empty() {
-            return None;
-        }
-
-        match self.lss.longest_descendant(0) {
-            Descendant::One { min } => Some(unsafe { min.as_ref() }),
-            Descendant::Zero { max } => Some(unsafe { max.as_ref() }),
-            _ => unreachable!(),
-        }
+    pub fn predecessor(&self, key: u32) -> Option<(u32, &T)> {
+        self.lss
+            .predecessor(key)
+            .map(|node| (node.key, &node.value))
     }
 
-    #[cfg(test)]
-    fn predecessor(&self, key: u32) -> Option<&LNode<u32, T>> {
-        // If we are empty, short-circuit evaluation
-        if self.map.is_empty() {
-            return None;
-        }
-        // Special-case: if key is in the map
-        if let Some(node) = self.map.get(&key) {
-            let node = unsafe { node.as_ref() };
-            debug_assert!(node.key == key);
-            return Some(&node);
-        }
-        match self.lss.longest_descendant(key) {
-            Descendant::Both => unreachable!(),
-            Descendant::One { min } => {
-                let prev = unsafe { min.as_ref().prev.as_ref() }?;
-                Some(&prev)
-            }
-            Descendant::Zero { max } => {
-                let max = unsafe { max.as_ref() };
-                Some(&max)
-            }
-        }
-    }
-
-    fn successor(&self, key: u32) -> Option<&LNode<u32, T>> {
-        // If we are empty, short-circuit evaluation
-        if self.map.is_empty() {
-            return None;
-        }
-        // Special-case: if key is in the map
-        if let Some(node) = self.map.get(&key) {
-            let node = unsafe { node.as_ref() };
-            debug_assert!(node.key == key);
-            return Some(&node);
-        }
-        match self.lss.longest_descendant(key) {
-            Descendant::Both => unreachable!(),
-            Descendant::One { min } => {
-                let prev = unsafe { min.as_ref() };
-                Some(&prev)
-            }
-            Descendant::Zero { max } => {
-                let max = unsafe { max.as_ref().next.as_ref() }?;
-                Some(&max)
-            }
-        }
-    }
-}
-
-impl<T> Drop for XFastMap<T> {
-    fn drop(&mut self) {
-        for (_key, value) in self.map.drain() {
-            unsafe {
-                drop(Box::from_raw(value.as_ptr()));
-            }
-        }
+    pub fn successor(&self, key: u32) -> Option<(u32, &T)> {
+        self.lss.successor(key).map(|node| (node.key, &node.value))
     }
 }
 
 #[derive(Debug, Eq, PartialEq)]
 struct LevelSearch<T> {
-    maps: [HashMap<u32, Descendant<T>>; 31],
-    root: Option<Descendant<T>>,
+    l0: Descendant<T>,
+    l1: HashMap<[u8; 1], Descendant<T>>,
+    l2: HashMap<[u8; 2], Descendant<T>>,
+    l3: HashMap<[u8; 3], Descendant<T>>,
 }
 
-impl<T: std::fmt::Debug> LevelSearch<T> {
+impl<T> LevelSearch<T> {
     fn new() -> LevelSearch<T> {
         LevelSearch {
-            maps: arr_macro::arr![HashMap::default(); 31],
-            root: None,
+            l0: Descendant::new(),
+            l1: HashMap::default(),
+            l2: HashMap::default(),
+            l3: HashMap::default(),
         }
     }
 
-    /// Insert into the LevelSearch struct. Return pointer to the LNode
-    fn insert(&mut self, key: u32, value: T) -> ptr::NonNull<LNode<u32, T>> {
-        let node = unsafe {
-            ptr::NonNull::new_unchecked(Box::into_raw(Box::new(LNode {
-                key,
-                value,
-                prev: ptr::null_mut(),
-                next: ptr::null_mut(),
-            })))
-        };
+    fn clear(&mut self) {
+        self.l0 = Descendant::new();
+        self.l1.clear();
+        self.l2.clear();
+        self.l3.clear();
+    }
 
-        for (i, map) in self.maps.iter_mut().enumerate().rev() {
-            let next_bit = key & (1 << (31 - i - 1));
-            let child = if next_bit == 0 {
-                Descendant::Zero { max: node }
+    fn insert(&mut self, node: &mut LNode<T>) {
+        let bytes = node.key.to_be_bytes();
+        let b1 = [bytes[0]];
+        let b2 = [bytes[0], bytes[1]];
+        let b3 = [bytes[0], bytes[1], bytes[2]];
+
+        // Do not use longest_descendant so we can re-use the hashes and
+        // entries
+        let mut v1 = self.l1.entry(b1);
+        let mut v2 = self.l2.entry(b2);
+        let mut v3 = self.l3.entry(b3);
+
+        if let HashEntry::Occupied(ref mut o) = v2 {
+            if let HashEntry::Occupied(ref mut o) = v3 {
+                o.get_mut().set_links(bytes[3], node);
             } else {
-                Descendant::One { min: node }
-            };
-
-            match map.entry(upper_bits(key, i)) {
-                Entry::Vacant(v) => {
-                    v.insert(child);
-                }
-                Entry::Occupied(mut o) => {
-                    o.get_mut().merge(child, node);
-                }
+                o.get_mut().set_links(bytes[2], node);
+            }
+        } else {
+            if let HashEntry::Occupied(ref mut o) = v1 {
+                o.get_mut().set_links(bytes[1], node);
+            } else {
+                self.l0.set_links(bytes[0], node);
             }
         }
 
-        let high_bit = key & (1 << 31);
-        let child = if high_bit == 0 {
-            Descendant::Zero { max: node }
-        } else {
-            Descendant::One { min: node }
-        };
+        self.l0.merge(bytes[0], node);
 
-        if let Some(ref mut root) = self.root {
-            root.merge(child, node);
-        } else {
-            self.root = Some(child);
+        fn insert_into_entry<T, K>(
+            byte: u8,
+            node: &mut LNode<T>,
+            entry: HashEntry<K, Descendant<T>>,
+        ) {
+            match entry {
+                HashEntry::Vacant(v) => {
+                    let mut desc = Descendant::new();
+                    desc.mins.insert(byte, unsafe {
+                        ptr::NonNull::new_unchecked(node)
+                    });
+                    desc.max = node;
+                    v.insert(desc);
+                }
+                HashEntry::Occupied(mut o) => {
+                    o.get_mut().merge(byte, node);
+                }
+            }
         }
-        node
+        insert_into_entry(bytes[1], node, v1);
+        insert_into_entry(bytes[2], node, v2);
+        insert_into_entry(bytes[3], node, v3);
     }
 
-    /// Remove an LNode from the LSS
-    ///
-    /// Note that this assumes that `node ` is actually *in* the LSS and
-    /// will panic otherwise
-    fn remove(&mut self, node: &LNode<u32, T>) {
-        fn common_prefix_len(a: u32, b: u32) -> u32 {
-            (a ^ b).leading_zeros()
-        }
-        let max_prefix_len = unsafe {
-            match (node.next.as_ref(), node.prev.as_ref()) {
-                (None, None) => {
-                    self.root = None;
-                    self.maps.iter_mut().for_each(HashMap::clear);
-                    return;
-                }
-                (Some(next), None) => common_prefix_len(next.key, node.key),
-                (None, Some(prev)) => common_prefix_len(prev.key, node.key),
-                (Some(next), Some(prev)) => std::cmp::max(
-                    common_prefix_len(prev.key, node.key),
-                    common_prefix_len(next.key, node.key),
-                ),
-            }
-        } as usize;
+    fn remove(&mut self, node: &LNode<T>) {
+        let bytes = node.key.to_be_bytes();
+        let b1 = [bytes[0]];
+        let b2 = [bytes[0], bytes[1]];
+        let b3 = [bytes[0], bytes[1], bytes[2]];
 
-        let desc = if max_prefix_len == 0 {
-            self.root.as_mut().unwrap()
-        } else {
-            self.maps[max_prefix_len - 1]
-                .get_mut(&upper_bits(node.key, max_prefix_len - 1))
-                .unwrap()
-        };
-        match desc {
-            Descendant::Both => unsafe {
-                let high_bit = node.key & (1 << (31 - max_prefix_len));
-                *desc = if high_bit == 0 {
-                    debug_assert!(!node.next.is_null());
-                    Descendant::One {
-                        min: ptr::NonNull::new_unchecked(node.next),
-                    }
-                } else {
-                    debug_assert!(!node.prev.is_null());
-                    Descendant::Zero {
-                        max: ptr::NonNull::new_unchecked(node.prev),
-                    }
-                }
-            },
-            _ => {
-                debug_assert_eq!(max_prefix_len, 0);
-                self.root = None;
+        self.l0.remove(bytes[0], node);
+        if let HashEntry::Occupied(mut o) = self.l1.entry(b1) {
+            o.get_mut().remove(bytes[1], node);
+            if o.get().is_empty() {
+                o.remove();
             }
         }
-
-        if let Some(ref mut desc) = self.root {
-            unsafe { desc.remove(node) };
-        }
-        for i in 0..max_prefix_len {
-            match self.maps[i].get_mut(&upper_bits(node.key, i)) {
-                Some(desc) => unsafe { desc.remove(node) },
-                None => unreachable!(),
+        if let HashEntry::Occupied(mut o) = self.l2.entry(b2) {
+            o.get_mut().remove(bytes[2], node);
+            if o.get().is_empty() {
+                o.remove();
             }
         }
-
-        for i in max_prefix_len..self.maps.len() {
-            self.maps[i].remove(&upper_bits(node.key, i));
+        if let HashEntry::Occupied(mut o) = self.l3.entry(b3) {
+            o.get_mut().remove(bytes[3], node);
         }
     }
 
-    /// Return the descendant from the deepest matching part of our
-    /// LevelSearch structure.
-    ///
-    /// This executes a binary search, so we expect O(lg w) time, where
-    /// w is the length of our keys.
-    ///
-    /// This requires the LevelSearch structure to have more than one
-    /// node in it, or it will panic
-    fn longest_descendant(&self, key: u32) -> &Descendant<T> {
-        debug_assert!(self.root.is_some());
+    fn min(&self) -> Option<&LNode<T>> {
+        let (_, desc) = self.longest_descendant(0);
+        desc.successor(0)
+    }
 
-        let mut bit = key & (0b1 << 31);
-        let mut level = match self.maps[0].get(&bit) {
-            None => {
-                bit ^= 0b1 << 31;
-                self.maps[0].get(&bit).unwrap()
+    fn predecessor(&self, key: u32) -> Option<&LNode<T>> {
+        let (byte, desc) = self.longest_descendant(key);
+        desc.predecessor(byte).or_else(|| {
+            desc.successor(byte)
+                .and_then(|node| unsafe { node.prev.as_ref() })
+        })
+    }
+
+    fn successor(&self, key: u32) -> Option<&LNode<T>> {
+        let (byte, desc) = self.longest_descendant(key);
+        desc.successor(byte).or_else(|| {
+            desc.predecessor(byte)
+                .and_then(|node| unsafe { node.next.as_ref() })
+        })
+    }
+
+    fn longest_descendant(&self, key: u32) -> (u8, &Descendant<T>) {
+        let bytes = key.to_be_bytes();
+        if let Some(desc) = self.l2.get(&[bytes[0], bytes[1]]) {
+            if let Some(desc) = self.l3.get(&[bytes[0], bytes[1], bytes[2]]) {
+                (bytes[3], &desc)
+            } else {
+                (bytes[2], &desc)
             }
-            Some(p) => p,
-        };
-
-        let mut left = 1;
-        let mut right = 32 - 2;
-        while left <= right {
-            let mid = (left + right) / 2;
-            match self.maps[mid].get(&upper_bits(key, mid)) {
-                None => right = mid - 1,
-                Some(m) => {
-                    level = m;
-                    left = mid + 1;
-                }
+        } else {
+            if let Some(desc) = self.l1.get(&[bytes[0]]) {
+                (bytes[1], &desc)
+            } else {
+                (bytes[0], &self.l0)
             }
         }
-
-        if let Descendant::Both = level {
-            level = self.root.as_ref().unwrap();
-        }
-        level
     }
 }
 
-/// An entry into our LevelSearch structure
-///
-/// This holds pointers to the linked list depending on how the level
-/// trie branches
 #[derive(Debug, Eq, PartialEq)]
-enum Descendant<T> {
-    Both,
-    Zero { max: ptr::NonNull<LNode<u32, T>> },
-    One { min: ptr::NonNull<LNode<u32, T>> },
+struct Descendant<T> {
+    max: *mut LNode<T>,
+    mins: BTreeMap<u8, ptr::NonNull<LNode<T>>>,
 }
 
 impl<T> Descendant<T> {
-    unsafe fn remove(&mut self, node: &LNode<u32, T>) {
-        match self {
-            Descendant::One { ref mut min } => {
-                if ptr::eq(min.as_ref(), node) {
-                    debug_assert!(!node.next.is_null());
-                    *min = ptr::NonNull::new_unchecked(node.next);
-                }
-            }
-            Descendant::Zero { ref mut max } => {
-                if ptr::eq(max.as_ref(), node) {
-                    debug_assert!(!node.prev.is_null());
-                    *max = ptr::NonNull::new_unchecked(node.prev);
-                }
-            }
-            _ => {}
+    fn new() -> Descendant<T> {
+        Descendant {
+            max: ptr::null_mut(),
+            mins: BTreeMap::new(),
         }
     }
 
-    fn merge(
-        &mut self,
-        other: Descendant<T>,
-        mut node: ptr::NonNull<LNode<u32, T>>,
-    ) {
-        let old = std::mem::replace(self, Descendant::Both);
-        let replacement = match (old, other) {
-            (Descendant::Both, _) => Descendant::Both,
-            (_, Descendant::Both) => Descendant::Both,
-            (Descendant::Zero { max: mut m }, Descendant::One { .. }) => {
-                unsafe {
-                    node.as_mut().prev = m.as_ptr();
-                    node.as_mut().next = m.as_mut().next;
+    fn is_empty(&self) -> bool {
+        debug_assert_eq!(self.max.is_null(), self.mins.is_empty());
+        self.max.is_null()
+    }
 
-                    m.as_mut().next = node.as_ptr();
-                    if let Some(next) = node.as_mut().next.as_mut() {
-                        next.prev = node.as_ptr();
+    fn predecessor(&self, byte: u8) -> Option<&LNode<T>> {
+        self.mins
+            .range(0..=byte)
+            .rev()
+            .next()
+            .map(|(_, node)| unsafe { node.as_ref() })
+    }
+
+    fn successor_mut(&mut self, byte: u8) -> Option<&mut LNode<T>> {
+        self.mins
+            .range_mut(byte..)
+            .next()
+            .map(|(_, node)| unsafe { node.as_mut() })
+    }
+
+    fn successor(&self, byte: u8) -> Option<&LNode<T>> {
+        self.mins
+            .range(byte..)
+            .next()
+            .map(|(_, node)| unsafe { node.as_ref() })
+    }
+
+    /// If this is the "lowest" Descendant matching the prefix, insert
+    /// node into the linked list.
+    fn set_links(&mut self, byte: u8, node: &mut LNode<T>) {
+        if let Some(next) = self.successor_mut(byte) {
+            debug_assert!(next.key > node.key);
+            node.set_next(next);
+        } else if let Some(prev) = unsafe { self.max.as_mut() } {
+            debug_assert!(prev.key < node.key);
+            node.set_prev(prev);
+        }
+    }
+
+    fn merge(&mut self, byte: u8, node: &mut LNode<T>) {
+        match self.mins.entry(byte) {
+            BTreeEntry::Vacant(v) => {
+                v.insert(unsafe { ptr::NonNull::new_unchecked(node) });
+            }
+            BTreeEntry::Occupied(mut o) => {
+                let min = unsafe { o.get_mut().as_mut() };
+                if min.key > node.key {
+                    o.insert(unsafe { ptr::NonNull::new_unchecked(node) });
+                    // min.key > node.key, so node cannot be the max
+                    return;
+                }
+            }
+        }
+        match unsafe { self.max.as_mut() } {
+            Some(max) => {
+                if max.key < node.key {
+                    self.max = node
+                }
+            }
+            None => self.max = node,
+        }
+    }
+
+    /// Remove the byte/node pair from the descendant pointers
+    fn remove(&mut self, byte: u8, node: &LNode<T>) {
+        let mut range = self.mins.range_mut(byte..);
+        if let Some(n) = range.next() {
+            debug_assert_eq!(*n.0, byte);
+            if ptr::eq(n.1.as_ptr(), node) {
+                match (range.next(), unsafe { node.next.as_ref() }) {
+                    (_, None) => {
+                        debug_assert!(ptr::eq(self.max, node));
+                        self.mins.remove(&byte);
+                    }
+                    (None, Some(next)) => {
+                        // self.max != null, because (byte, node) exists
+                        let max = unsafe { self.max.as_ref().unwrap() };
+                        if next.key < max.key {
+                            self.mins.insert(byte, ptr::NonNull::from(next));
+                        } else {
+                            self.mins.remove(&byte);
+                        }
+                    }
+                    (Some((_, successor)), Some(next)) => {
+                        if next.key < unsafe { successor.as_ref() }.key {
+                            self.mins.insert(byte, ptr::NonNull::from(next));
+                        } else {
+                            self.mins.remove(&byte);
+                        }
                     }
                 }
-                Descendant::Both
             }
-            (Descendant::One { min: mut m }, Descendant::Zero { .. }) => {
-                unsafe {
-                    node.as_mut().next = m.as_ptr();
-                    node.as_mut().prev = m.as_mut().prev;
-                    m.as_mut().prev = node.as_ptr();
+        }
 
-                    if let Some(prev) = node.as_mut().prev.as_mut() {
-                        prev.next = node.as_ptr();
-                    }
-                }
-                Descendant::Both
+        if ptr::eq(self.max, node) {
+            if self.mins.is_empty() {
+                self.max = ptr::null_mut();
+            } else {
+                self.max = node.prev;
             }
-            (Descendant::Zero { max: m1 }, Descendant::Zero { max: m2 }) => {
-                if unsafe { m2.as_ref().key > m1.as_ref().key } {
-                    Descendant::Zero { max: m2 }
-                } else {
-                    Descendant::Zero { max: m1 }
-                }
-            }
-            (Descendant::One { min: m1 }, Descendant::One { min: m2 }) => {
-                if unsafe { m2.as_ref().key < m1.as_ref().key } {
-                    Descendant::One { min: m2 }
-                } else {
-                    Descendant::One { min: m1 }
-                }
-            }
-        };
-        std::mem::replace(self, replacement);
+        }
     }
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub(super) struct LNode<K: Eq + PartialEq, V> {
-    key: K,
-    value: V,
+pub(super) struct LNode<T> {
+    key: u32,
+    value: T,
 
-    prev: *mut LNode<K, V>,
-    next: *mut LNode<K, V>,
+    prev: *mut LNode<T>,
+    next: *mut LNode<T>,
+}
+
+impl<T> LNode<T> {
+    fn new(key: u32, value: T) -> LNode<T> {
+        LNode {
+            key,
+            value,
+            prev: ptr::null_mut(),
+            next: ptr::null_mut(),
+        }
+    }
+
+    fn set_prev(&mut self, other: &mut LNode<T>) {
+        self.prev = other;
+        self.next = other.next;
+
+        other.next = self;
+        if let Some(next) = unsafe { self.next.as_mut() } {
+            next.prev = self;
+        }
+    }
+
+    fn set_next(&mut self, other: &mut LNode<T>) {
+        self.next = other;
+        self.prev = other.prev;
+
+        other.prev = self;
+        if let Some(prev) = unsafe { self.prev.as_mut() } {
+            prev.next = self;
+        }
+    }
 }
 
 #[cfg(test)]
 mod test {
+    use std::iter::FromIterator;
+
     use super::*;
 
     #[test]
-    fn test_upper_bits() {
-        let key = 0b10000110000100111001001010010001;
-        for i in 0..31 {
-            let upper = upper_bits(key, i);
-            assert_eq!(upper & key, upper);
-        }
-        assert_eq!(upper_bits(key, 0), 0b1 << 31);
-        assert_eq!(upper_bits(key, 1), 0b10 << 30);
-        assert_eq!(upper_bits(key, 2), 0b100 << 29);
-        assert_eq!(upper_bits(key, 3), 0b1000 << 28);
-        assert_eq!(upper_bits(key, 4), 0b10000 << 27);
-        assert_eq!(upper_bits(key, 5), 0b100001 << 26);
+    fn test_levelsearch_insert_1() {
+        let mut lss = LevelSearch::new();
+        let mut node = LNode::new(0xdeadbeef, ());
+
+        lss.insert(&mut node);
+
+        let ptr = &mut node as *mut _;
+        let nonnull = ptr::NonNull::new(ptr).unwrap();
+
+        assert_eq!(lss.l0.max, ptr);
+        assert_eq!(lss.l0.mins.len(), 1);
+        assert_eq!(lss.l0.mins[&0xde].as_ptr(), ptr);
+
+        assert_eq!(lss.l1.len(), 1);
+        let desc = &lss.l1[&[0xde]];
+        assert_eq!(desc.max, ptr);
+        assert_eq!(desc.mins, BTreeMap::from_iter(vec![(0xad, nonnull)]));
+
+        assert_eq!(lss.l2.len(), 1);
+        let desc = &lss.l2[&[0xde, 0xad]];
+        assert_eq!(desc.max, ptr);
+        assert_eq!(desc.mins, BTreeMap::from_iter(vec![(0xbe, nonnull)]));
+
+        assert_eq!(lss.l3.len(), 1);
+        let desc = &lss.l3[&[0xde, 0xad, 0xbe]];
+        assert_eq!(desc.max, ptr);
+        assert_eq!(desc.mins, BTreeMap::from_iter(vec![(0xef, nonnull)]));
     }
 
     #[test]
-    fn test_lss_insertion_1() {
+    fn test_levelsearch_insert_4() {
         let mut lss = LevelSearch::new();
-        let ptr = lss.insert(0b11001000001110011111011010100000, b'a');
+        let mut n1 = LNode::new(0xbaadf00d, ());
+        let mut n2 = LNode::new(0xdeadbeef, ());
+        let mut n3 = LNode::new(0xdeadc0de, ());
+        let mut n4 = LNode::new(0xdeadc0fe, ());
+
+        lss.insert(&mut n3);
+        lss.insert(&mut n4);
+        lss.insert(&mut n2);
+        lss.insert(&mut n1);
+
+        let p1 = &mut n1 as *mut _;
+        let p2 = &mut n2 as *mut _;
+        let p3 = &mut n3 as *mut _;
+        let p4 = &mut n4 as *mut _;
+
+        assert!(n1.prev.is_null());
+        assert_eq!(n1.next, p2);
+        assert_eq!(n2.prev, p1);
+        assert_eq!(n2.next, p3);
+        assert_eq!(n3.prev, p2);
+        assert_eq!(n3.next, p4);
+        assert_eq!(n4.prev, p3);
+        assert!(n4.next.is_null());
+
+        let nn1 = ptr::NonNull::new(p1).unwrap();
+        let nn2 = ptr::NonNull::new(p2).unwrap();
+        let nn3 = ptr::NonNull::new(p3).unwrap();
+        let nn4 = ptr::NonNull::new(p4).unwrap();
+
         assert_eq!(
-            unsafe { ptr.as_ref() },
-            &LNode {
-                key: 0b11001000001110011111011010100000,
-                value: b'a',
-                prev: ptr::null_mut(),
-                next: ptr::null_mut(),
+            lss.l0,
+            Descendant {
+                max: p4,
+                mins: BTreeMap::from_iter(vec![(0xba, nn1), (0xde, nn2)])
             }
         );
-
-        assert_eq!(lss.root, Some(Descendant::One { min: ptr }));
-
-        let mut map = HashMap::default();
-        map.insert(
-            0b10000000000000000000000000000000,
-            Descendant::One { min: ptr },
+        assert_eq!(
+            lss.l1,
+            HashMap::from_iter(vec![
+                (
+                    [0xde],
+                    Descendant {
+                        max: p4,
+                        mins: BTreeMap::from_iter(vec![(0xad, nn2)])
+                    }
+                ),
+                (
+                    [0xba],
+                    Descendant {
+                        max: p1,
+                        mins: BTreeMap::from_iter(vec![(0xad, nn1)])
+                    }
+                )
+            ])
         );
-        assert_eq!(lss.maps[0], map);
-
-        map.clear();
-        map.insert(
-            0b11000000000000000000000000000000,
-            Descendant::Zero { max: ptr },
+        assert_eq!(
+            lss.l2,
+            HashMap::from_iter(vec![
+                (
+                    [0xde, 0xad],
+                    Descendant {
+                        max: p4,
+                        mins: BTreeMap::from_iter(vec![
+                            (0xbe, nn2),
+                            (0xc0, nn3)
+                        ])
+                    }
+                ),
+                (
+                    [0xba, 0xad],
+                    Descendant {
+                        max: p1,
+                        mins: BTreeMap::from_iter(vec![(0xf0, nn1)])
+                    }
+                )
+            ],)
         );
-        assert_eq!(lss.maps[1], map);
-
-        map.clear();
-        map.insert(
-            0b11001000001110000000000000000000,
-            Descendant::One { min: ptr },
+        assert_eq!(
+            lss.l3,
+            HashMap::from_iter(vec![
+                (
+                    [0xba, 0xad, 0xf0],
+                    Descendant {
+                        max: p1,
+                        mins: BTreeMap::from_iter(vec![(0x0d, nn1)])
+                    }
+                ),
+                (
+                    [0xde, 0xad, 0xbe],
+                    Descendant {
+                        max: p2,
+                        mins: BTreeMap::from_iter(vec![(0xef, nn2)])
+                    }
+                ),
+                (
+                    [0xde, 0xad, 0xc0],
+                    Descendant {
+                        max: p4,
+                        mins: BTreeMap::from_iter(vec![
+                            (0xde, nn3),
+                            (0xfe, nn4)
+                        ])
+                    }
+                ),
+            ]),
         );
-        assert_eq!(lss.maps[14], map);
-
-        map.clear();
-        map.insert(
-            0b11001000001110011111011010100000,
-            Descendant::Zero { max: ptr },
-        );
-        assert_eq!(lss.maps[30], map);
-
-        unsafe {
-            drop(Box::from_raw(ptr.as_ptr()));
-        }
-    }
-
-    #[test]
-    fn test_lss_remove_single_element() {
-        let mut lss = LevelSearch::new();
-        let p0 = lss.insert(0xF000_0000, b'a');
-        lss.remove(unsafe { p0.as_ref() });
-
-        assert_eq!(lss.root, None);
-        for map in lss.maps.iter() {
-            assert!(map.is_empty());
-        }
-        unsafe {
-            drop(Box::from_raw(p0.as_ptr()));
-        }
-    }
-
-    #[test]
-    fn test_lss_remove_root_both() {
-        let mut lss = LevelSearch::new();
-        let p0 = lss.insert(0x0000_0000, b'a');
-        let p1 = lss.insert(0x8000_0000, b'a');
-        assert_eq!(lss.root, Some(Descendant::Both));
-
-        lss.remove(unsafe { p0.as_ref() });
-        assert_eq!(lss.root, Some(Descendant::One { min: p1 }));
-
-        let mut expected = HashMap::default();
-        expected.insert(0x8000_0000, Descendant::Zero { max: p1 });
-        for map in lss.maps.iter() {
-            assert_eq!(map, &expected);
-        }
-
-        lss.remove(unsafe { p1.as_ref() });
-        assert_eq!(lss.root, None);
-        for map in lss.maps.iter() {
-            assert!(map.is_empty());
-        }
-
-        unsafe {
-            drop(Box::from_raw(p0.as_ptr()));
-            drop(Box::from_raw(p1.as_ptr()));
-        }
-    }
-
-    #[test]
-    fn test_lss_remove_non_root() {
-        let mut lss = LevelSearch::new();
-        let p0 = lss.insert(0x0000_0000, b'a');
-        let p1 = lss.insert(0x0000_F000, b'a');
-        lss.remove(unsafe { p1.as_ref() });
-
-        assert_eq!(lss.root, Some(Descendant::Zero { max: p0 }));
-        let mut expected = HashMap::default();
-        expected.insert(0x0000_0000, Descendant::Zero { max: p0 });
-        for map in lss.maps.iter() {
-            assert_eq!(map, &expected);
-        }
-
-        unsafe {
-            drop(Box::from_raw(p0.as_ptr()));
-            drop(Box::from_raw(p1.as_ptr()));
-        }
-    }
-
-    #[test]
-    fn test_xfast_min_node() {
-        let keys: [u32; 33] = [
-            0xcd59c9de, 0x856cb188, 0x6eaaa008, 0xde8db9a9, 0xac3c6ef9,
-            0xaba4ba19, 0xc521efbc, 0x866621f3, 0xed3b37a2, 0xda2a7ce7,
-            0x63df9f0a, 0xb2e4be7c, 0x9c69cb0d, 0x808375c4, 0xbc42de68,
-            0x73f9c015, 0x72903697, 0xb12ad490, 0x9282c1c2, 0x8d4ac30e,
-            0xfb1c49e7, 0x9ffdd800, 0x40fd421f, 0x3aa9e7b1, 0x7a20774e,
-            0xb940e532, 0x749fee0d, 0x0e6c8517, 0x0fa4dc69, 0x205ec45f,
-            0xc8281c71, 0xedd6b0c7, 0,
-        ];
-
-        let mut xfast = XFastMap::new();
-        assert_eq!(xfast.min_node(), None);
-        for (i, key) in keys.iter().enumerate() {
-            assert_eq!(xfast.insert(*key, ()), None);
-            let min = keys[..=i].iter().min().cloned();
-            assert_eq!(xfast.min_node().map(|x| x.key), min);
-        }
     }
 
     #[test]
@@ -730,6 +687,36 @@ mod test {
     }
 
     #[test]
+    fn test_xfast_insert_preserves_linked_list() {
+        let keys: [u32; 34] = [
+            0xcd59c9de, 0x856cb188, 0x6eaaa008, 0xde8db9a9, 0xac3c6ef9,
+            0xaba4ba19, 0xc521efbc, 0x866621f3, 0xed3b37a2, 0xda2a7ce7,
+            0x63df9f0a, 0xb2e4be7c, 0x9c69cb0d, 0x808375c4, 0xbc42de68,
+            0x73f9c015, 0x72903697, 0xb12ad490, 0x9282c1c2, 0x8d4ac30e,
+            0xfb1c49e7, 0x9ffdd800, 0x40fd421f, 0x3aa9e7b1, 0x7a20774e,
+            0xb940e532, 0x749fee0d, 0x0e6c8517, 0x0fa4dc69, 0x205ec45f,
+            0xc8281c71, 0xedd6b0c7, 0, 0xFFFFFFFF,
+        ];
+
+        let mut xfast = XFastMap::new();
+        for (i, key) in keys.iter().enumerate() {
+            assert_eq!(xfast.insert(*key, ()), None);
+
+            let mut sorted = keys[..=i].iter().cloned().collect::<Vec<_>>();
+            sorted.sort();
+
+            let mut n = xfast.lss.min().unwrap();
+
+            for j in 0..i {
+                assert_eq!(n.key, sorted[j]);
+                n = unsafe { n.next.as_ref().unwrap() }
+            }
+            assert_eq!(n.key, sorted[i]);
+            assert!(n.next.is_null());
+        }
+    }
+
+    #[test]
     fn test_xfast_predecessor_successor() {
         let keys: [u32; 34] = [
             0xcd59c9de, 0x856cb188, 0x6eaaa008, 0xde8db9a9, 0xac3c6ef9,
@@ -745,88 +732,22 @@ mod test {
         for (i, key) in keys.iter().enumerate() {
             assert_eq!(xfast.insert(*key, ()), None);
 
-            let mut sorted = keys[..=i].iter().collect::<Vec<_>>();
+            let mut sorted = keys[..=i].iter().cloned().collect::<Vec<_>>();
             sorted.sort();
             for (j, ki) in sorted.iter().cloned().enumerate() {
                 if j > 0 {
                     assert_eq!(
                         xfast.predecessor(ki - 1),
-                        xfast
-                            .map
-                            .get(sorted[j - 1])
-                            .map(|ptr| unsafe { ptr.as_ref() })
+                        Some((sorted[j - 1], &()))
                     );
                 }
-
-                assert_eq!(xfast.predecessor(*ki), xfast.successor(*ki));
-                assert_eq!(
-                    xfast.predecessor(*ki),
-                    xfast.map.get(ki).map(|ptr| unsafe { ptr.as_ref() })
-                );
+                assert_eq!(xfast.predecessor(ki), Some((sorted[j], &())));
+                assert_eq!(xfast.successor(ki), Some((sorted[j], &())));
 
                 if j + 1 < sorted.len() {
                     assert_eq!(
                         xfast.successor(ki + 1),
-                        xfast
-                            .map
-                            .get(sorted[j + 1])
-                            .map(|ptr| unsafe { ptr.as_ref() })
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn test_xfast_integration_insert() {
-        let keys: [u32; 32] = [
-            0xcd59c9de, 0x856cb188, 0x6eaaa008, 0xde8db9a9, 0xac3c6ef9,
-            0xaba4ba19, 0xc521efbc, 0x866621f3, 0xed3b37a2, 0xda2a7ce7,
-            0x63df9f0a, 0xb2e4be7c, 0x9c69cb0d, 0x808375c4, 0xbc42de68,
-            0x73f9c015, 0x72903697, 0xb12ad490, 0x9282c1c2, 0x8d4ac30e,
-            0xfb1c49e7, 0x9ffdd800, 0x40fd421f, 0x3aa9e7b1, 0x7a20774e,
-            0xb940e532, 0x749fee0d, 0x0e6c8517, 0x0fa4dc69, 0x205ec45f,
-            0xc8281c71, 0xedd6b0c7,
-        ];
-
-        let mut xfast = XFastMap::new();
-        // Empty map, no predecessor
-        for key in keys.iter() {
-            assert!(xfast.predecessor(*key).is_none());
-        }
-
-        for (i, key) in keys.iter().enumerate() {
-            let (key, value) = (*key, i as u32);
-            assert_eq!(xfast.insert(key, 0), None);
-            // Replace the old key
-            assert_eq!(xfast.insert(key, value), Some(0));
-
-            // Predecessor works
-            assert_eq!(
-                xfast.predecessor(key).map(|node| node.value),
-                Some(value)
-            );
-
-            // Check that predecessor works for each sorted element
-            let mut sorted = (0..=i as u32).collect::<Vec<_>>();
-            sorted.sort_unstable_by_key(|k| keys[*k as usize]);
-            for (j, ki) in sorted.iter().cloned().enumerate() {
-                let k = keys[ki as usize];
-                assert_eq!(
-                    xfast.predecessor(k).map(|node| node.value),
-                    Some(ki)
-                );
-                assert_eq!(
-                    xfast.predecessor(k + 1).map(|node| node.value),
-                    Some(ki)
-                );
-
-                if j == 0 {
-                    assert!(xfast.predecessor(k - 1).is_none());
-                } else {
-                    assert_eq!(
-                        xfast.predecessor(k - 1).map(|node| node.value),
-                        Some(sorted[j - 1])
+                        Some((sorted[j + 1], &()))
                     );
                 }
             }
@@ -835,47 +756,49 @@ mod test {
 
     #[test]
     fn test_xfast_integration_remove() {
-        let keys: [u32; 32] = [
+        let keys: [u32; 34] = [
             0xcd59c9de, 0x856cb188, 0x6eaaa008, 0xde8db9a9, 0xac3c6ef9,
             0xaba4ba19, 0xc521efbc, 0x866621f3, 0xed3b37a2, 0xda2a7ce7,
             0x63df9f0a, 0xb2e4be7c, 0x9c69cb0d, 0x808375c4, 0xbc42de68,
             0x73f9c015, 0x72903697, 0xb12ad490, 0x9282c1c2, 0x8d4ac30e,
             0xfb1c49e7, 0x9ffdd800, 0x40fd421f, 0x3aa9e7b1, 0x7a20774e,
             0xb940e532, 0x749fee0d, 0x0e6c8517, 0x0fa4dc69, 0x205ec45f,
-            0xc8281c71, 0xedd6b0c7,
+            0xc8281c71, 0xedd6b0c7, 0, 0xFFFFFFFF,
         ];
         let mut xfast = XFastMap::new();
-        for (i, key) in keys.iter().enumerate() {
-            let (key, value) = (*key, i as u32);
-            assert_eq!(xfast.insert(key, value), None);
+        for key in keys.iter().cloned() {
+            assert_eq!(xfast.insert(key, ()), None);
         }
 
-        for (i, key) in keys.iter().enumerate() {
-            let (key, value) = (*key, i as u32);
-            assert_eq!(xfast.remove(key), Some(value));
+        for (i, key) in keys.iter().cloned().enumerate() {
+            assert_eq!(xfast.remove(key), Some(()));
             assert_eq!(xfast.remove(key), None);
 
             // Check that predecessor works for each sorted element
-            let mut sorted = (1 + i as u32..32).collect::<Vec<_>>();
-            sorted.sort_unstable_by_key(|k| keys[*k as usize]);
+            let mut sorted = keys[1 + i..].iter().cloned().collect::<Vec<_>>();
+            sorted.sort();
             for (j, ki) in sorted.iter().cloned().enumerate() {
-                let k = keys[ki as usize];
-                assert_eq!(
-                    xfast.predecessor(k).map(|node| node.value),
-                    Some(ki)
-                );
-                assert_eq!(
-                    xfast.predecessor(k + 1).map(|node| node.value),
-                    Some(ki)
-                );
+                assert_eq!(xfast.predecessor(ki), Some((ki, &())));
+                assert_eq!(xfast.successor(ki), Some((ki, &())));
 
-                if j == 0 {
-                    assert!(xfast.predecessor(k - 1).is_none());
-                } else {
-                    assert_eq!(
-                        xfast.predecessor(k - 1).map(|node| node.value),
-                        Some(sorted[j - 1])
-                    );
+                if ki < u32::max_value() {
+                    assert_eq!(xfast.predecessor(ki + 1), Some((ki, &())));
+                    if j + 1 < sorted.len() {
+                        assert_eq!(
+                            xfast.successor(ki + 1),
+                            Some((sorted[j + 1], &()))
+                        );
+                    }
+                }
+                if ki > 0 {
+                    assert_eq!(xfast.successor(ki - 1), Some((ki, &())));
+
+                    if j > 0 {
+                        assert_eq!(
+                            xfast.predecessor(ki - 1),
+                            Some((sorted[j - 1], &()))
+                        );
+                    }
                 }
             }
         }
