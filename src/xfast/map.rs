@@ -212,13 +212,11 @@ impl<T> LevelSearch<T> {
             }
         }
 
-        self.l0.merge(bytes[0], node);
-
         fn insert_into_entry<T, K>(
             byte: u8,
             node: &mut LNode<T>,
             entry: HashEntry<K, Descendant<T>>,
-        ) {
+        ) -> bool {
             match entry {
                 HashEntry::Vacant(v) => {
                     let mut desc = Descendant::new();
@@ -229,15 +227,23 @@ impl<T> LevelSearch<T> {
                         )
                     });
                     v.insert(desc);
+                    true
                 }
                 HashEntry::Occupied(mut o) => {
-                    o.get_mut().merge(byte, node);
+                    o.get_mut().merge(byte, node)
                 }
             }
         }
-        insert_into_entry(bytes[1], node, v1);
-        insert_into_entry(bytes[2], node, v2);
-        insert_into_entry(bytes[3], node, v3);
+        if !insert_into_entry(bytes[3], node, v3) {
+            return;
+        }
+        if !insert_into_entry(bytes[2], node, v2) {
+            return;
+        }
+        if !insert_into_entry(bytes[1], node, v1) {
+            return;
+        }
+        self.l0.merge(bytes[0], node);
     }
 
     fn remove(&mut self, node: &LNode<T>) {
@@ -382,7 +388,8 @@ impl<T> Descendant<T> {
         }
     }
 
-    fn merge(&mut self, byte: u8, node: &mut LNode<T>) {
+    /// Insert (byte, node), return whether it is a border node
+    fn merge(&mut self, byte: u8, node: &mut LNode<T>) -> bool {
         match self.bounds.entry(byte) {
             BTreeEntry::Vacant(v) => {
                 v.insert(unsafe {
@@ -391,13 +398,18 @@ impl<T> Descendant<T> {
                         ptr::NonNull::new_unchecked(node),
                     )
                 });
+                true
             }
             BTreeEntry::Occupied(mut o) => {
                 let (min, max) = o.get_mut();
                 if node.key < unsafe { min.as_ref() }.key {
                     *min = ptr::NonNull::from(node);
+                    true
                 } else if node.key > unsafe { max.as_ref() }.key {
                     *max = ptr::NonNull::from(node);
+                    true
+                } else {
+                    false
                 }
             }
         }
