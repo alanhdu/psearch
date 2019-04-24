@@ -1,9 +1,4 @@
-const B: usize = 6;
-const MIN_LEN: usize = B - 1;
-const CAPACITY: usize = 2 * B - 1;
-
 const SIZE: u32 = 64;
-
 const INCREMENT: [u32; 4] =
     [0x01_01_01_00, 0x01_01_00_00, 0x01_00_00_00, 0x00_00_00_00];
 
@@ -33,7 +28,7 @@ fn pext(src: u64, mask: u64) -> u64 {
 /// this bitstring contains n bits, then it will be the *first* n bits
 /// in the bitstring
 #[derive(Debug, Eq, PartialEq)]
-pub(super) struct Bits256 {
+pub struct Bits256 {
     ones: [u8; 4],
     len: u32, // NOTE: this actual fits in a u8, if we need more space
     /// Containers holding our actual bitstring. Within a u64, bits go
@@ -44,16 +39,16 @@ pub(super) struct Bits256 {
 }
 
 impl Bits256 {
-    pub(super) fn num_ones(&self) -> u32 {
-        self.ones[3] as u32 + self.bits[3].count_ones()
+    pub fn num_ones(&self) -> u32 {
+        u32::from(self.ones[3]) + self.bits[3].count_ones()
     }
 
-    pub(super) fn num_zeros(&self) -> u32 {
+    pub fn num_zeros(&self) -> u32 {
         self.len - self.num_ones()
     }
 
     /// Insert a bit at our index
-    pub(super) fn insert_bit(&mut self, index: usize, bit: bool) {
+    pub fn insert_bit(&mut self, index: usize, bit: bool) {
         debug_assert!(index <= self.len as usize);
 
         let index = index as u8;
@@ -64,7 +59,7 @@ impl Bits256 {
         // TODO(alan): See if you can SIMD accelerate this (shift right
         // + bitwise |)
         self.bits[upper] =
-            pdep(self.bits[upper], !(1 << lower)) | (bit as u64) * (1 << lower);
+            pdep(self.bits[upper], !(1 << lower)) | ((bit as u64) * (1 << lower));
 
         self.ones = (u32::from_le_bytes(self.ones)
             + (bit as u32) * INCREMENT[upper]
@@ -86,7 +81,7 @@ impl Bits256 {
     }
 
     /// Remove a bit at our index
-    pub(super) fn remove_bit(&mut self, index: usize) -> bool {
+    pub fn remove_bit(&mut self, index: usize) -> bool {
         debug_assert!(index < self.len as usize);
 
         // TODO(alan): See if you can SIMD accelerate this shift left
@@ -119,7 +114,7 @@ impl Bits256 {
     }
 
     /// Set the bit at index to the given value
-    pub(super) fn set_bit(&mut self, index: usize, bit: bool) {
+    pub fn set_bit(&mut self, index: usize, bit: bool) {
         debug_assert!(index < self.len as usize);
         let index = index as u8;
 
@@ -141,14 +136,14 @@ impl Bits256 {
     }
 
     /// Return the number of 0s before the `i`th position
-    pub(super) fn rank0(&self, index: u32) -> u32 {
-        debug_assert!(index < self.len as u32);
+    pub fn rank0(&self, index: u32) -> u32 {
+        debug_assert!(index < self.len);
         index - self.rank1(index)
     }
 
     /// Return the number of 1s before the `i`th position
-    pub(super) fn rank1(&self, index: u32) -> u32 {
-        debug_assert!(index < self.len as u32);
+    pub fn rank1(&self, index: u32) -> u32 {
+        debug_assert!(index < self.len);
         let upper = (index as u8) >> 6;
         let lower = (index as u8) & 0b0011_1111;
 
@@ -157,11 +152,11 @@ impl Bits256 {
         } else {
             (self.bits[upper as usize] << (SIZE - lower as u32)).count_ones()
         };
-        bits + self.ones[upper as usize] as u32
+        bits + u32::from(self.ones[upper as usize])
     }
 
     /// Return the position of the `i`th 0 (0-indexed)
-    pub(super) fn select0(&self, index: u32) -> u32 {
+    pub fn select0(&self, index: u32) -> u32 {
         debug_assert!(index < 256);
         debug_assert!(index < self.len);
         let index = index as u8;
@@ -184,7 +179,7 @@ impl Bits256 {
     }
 
     /// Return the position of the `i`th 1 (0-indexed)
-    pub(super) fn select1(&self, index: u32) -> u32 {
+    pub fn select1(&self, index: u32) -> u32 {
         debug_assert!(index < 256);
         debug_assert!(index < self.len);
         let index = index as u8;
