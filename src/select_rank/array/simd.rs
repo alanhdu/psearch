@@ -3,7 +3,7 @@ use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
-const INCREMENT: [u32; 7 + 8] = [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1];
+const INCREMENT: [u32; 16] = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1];
 
 #[allow(clippy::cast_ptr_alignment)]
 unsafe fn loadu(haystack: &[u32]) -> __m256i {
@@ -61,17 +61,17 @@ pub(crate) fn rank(haystack: &[u32; 16], needle: u32) -> u8 {
 }
 
 pub(crate) fn increment(values: &mut [u32; 16], mut pos: usize) {
-    debug_assert!(values.iter().all(|v| *v <= i32::max_value() as u32));
+    debug_assert!(values.iter().all(|v| *v < i32::max_value() as u32));
     unsafe {
         if pos < 8 {
             let half = loadu(values);
-            let inc = loadu(&INCREMENT[7 - pos..]);
+            let inc = loadu(&INCREMENT[8 - pos..]);
 
             storeu(values, _mm256_add_epi32(half, inc));
             pos = 8;
         }
         let half = loadu(&values[8..]);
-        let inc = loadu(&INCREMENT[15 - pos..]);
+        let inc = loadu(&INCREMENT[16 - pos..]);
         storeu(&mut values[8..], _mm256_add_epi32(half, inc));
     }
 }
