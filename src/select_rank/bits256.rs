@@ -74,7 +74,6 @@ impl Bits256 {
         let lower = index & 0b0011_1111;
 
         let mut last = self.bits[upper] >> 63;
-        dbg!(&self, index, bit, upper, lower);
 
         // TODO(alan): See if you can SIMD accelerate this (shift right
         // + bitwise |)
@@ -512,16 +511,25 @@ mod test {
 
     proptest! {
         #[test]
-        fn test_bits256_prop_insert(bits
-            in proptest::collection::vec(proptest::bool::ANY, 1..255)) {
+        fn test_bits256_prop_insert(input in proptest::collection::vec(
+            (prop::num::u8::ANY, prop::bool::ANY), 1..255)
+        ) {
             let mut bits256 = Bits256 {
                 n_ones: [0, 0, 0, 0],
                 len: 0,
                 bits: [0, 0, 0, 0],
             };
 
-            for (i, bit) in bits.iter().cloned().enumerate() {
-                bits256.insert_bit(i, bit);
+            let mut bits = Vec::with_capacity(input.len());
+
+            for (order, bit) in input.iter().cloned() {
+                let order = order as usize % (bits.len() + 1);
+                bits256.insert_bit(order, bit);
+                bits.insert(order, bit);
+                assert_eq!(bits256.to_vec(), bits);
+                for j in 1..4 {
+                    assert!(bits256.n_ones[j] >= bits256.n_ones[j - 1]);
+                }
             }
 
             // Test struct values
@@ -564,7 +572,7 @@ mod test {
         }
 
         #[test]
-        fn test_bits256_prop_insert_zeros(order
+        fn test_bits256_prop_insert_ones(order
             in proptest::collection::vec(0..255usize, 255)) {
             let mut bits = Bits256::new();
             for (i, o) in order.iter().cloned().enumerate() {
