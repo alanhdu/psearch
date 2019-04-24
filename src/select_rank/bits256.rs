@@ -58,11 +58,11 @@ impl Bits256 {
         let mut last = self.bits[upper] >> 63;
         // TODO(alan): See if you can SIMD accelerate this (shift right
         // + bitwise |)
-        self.bits[upper] =
-            pdep(self.bits[upper], !(1 << lower)) | ((bit as u64) * (1 << lower));
+        self.bits[upper] = pdep(self.bits[upper], !(1 << lower))
+            | ((bit as u64) * (1 << lower));
 
         self.ones = (u32::from_le_bytes(self.ones)
-            + (bit as u32) * INCREMENT[upper]
+            + (u32::from(bit)) * INCREMENT[upper]
             - (last as u32) * INCREMENT[upper])
             .to_le_bytes();
 
@@ -144,15 +144,15 @@ impl Bits256 {
     /// Return the number of 1s before the `i`th position
     pub fn rank1(&self, index: u32) -> u32 {
         debug_assert!(index < self.len);
-        let upper = (index as u8) >> 6;
+        let upper = usize::from((index as u8) >> 6);
         let lower = (index as u8) & 0b0011_1111;
 
         let bits = if lower == 0 {
             0
         } else {
-            (self.bits[upper as usize] << (SIZE - lower as u32)).count_ones()
+            (self.bits[upper] << (SIZE - u32::from(lower))).count_ones()
         };
-        bits + u32::from(self.ones[upper as usize])
+        bits + u32::from(self.ones[upper])
     }
 
     /// Return the position of the `i`th 0 (0-indexed)
