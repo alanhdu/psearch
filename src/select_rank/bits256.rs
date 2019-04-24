@@ -29,7 +29,7 @@ fn pext(src: u64, mask: u64) -> u64 {
 /// in the bitstring
 #[derive(Debug, Eq, PartialEq)]
 pub struct Bits256 {
-    ones: [u8; 4],
+    n_ones: [u8; 4],
     len: u32, // NOTE: this actual fits in a u8, if we need more space
     /// Containers holding our actual bitstring. Within a u64, bits go
     /// from right to left (i.e. bit number 0 is the *least* significant
@@ -41,7 +41,7 @@ pub struct Bits256 {
 impl Bits256 {
     pub fn new() -> Bits256 {
         Bits256 {
-            ones: [0; 4],
+            n_ones: [0; 4],
             len: 0,
             bits: [0; 4],
         }
@@ -57,7 +57,7 @@ impl Bits256 {
     }
 
     pub fn num_ones(&self) -> u32 {
-        u32::from(self.ones[3]) + self.bits[3].count_ones()
+        u32::from(self.n_ones[3]) + self.bits[3].count_ones()
     }
 
     pub fn num_zeros(&self) -> u32 {
@@ -66,6 +66,7 @@ impl Bits256 {
 
     /// Insert a bit at our index
     pub fn insert_bit(&mut self, index: usize, bit: bool) {
+        debug_assert!(!self.is_full());
         debug_assert!(index <= self.len as usize);
 
         let index = index as u8;
@@ -73,12 +74,14 @@ impl Bits256 {
         let lower = index & 0b0011_1111;
 
         let mut last = self.bits[upper] >> 63;
+        dbg!(&self, index, bit, upper, lower);
+
         // TODO(alan): See if you can SIMD accelerate this (shift right
         // + bitwise |)
         self.bits[upper] = pdep(self.bits[upper], !(1 << lower))
             | ((bit as u64) * (1 << lower));
 
-        self.ones = (u32::from_le_bytes(self.ones)
+        self.n_ones = (u32::from_le_bytes(self.n_ones)
             + (u32::from(bit)) * INCREMENT[upper]
             - (last as u32) * INCREMENT[upper])
             .to_le_bytes();
@@ -88,9 +91,9 @@ impl Bits256 {
         while upper * 64 < self.len as usize {
             let old = last;
             last = self.bits[upper] >> 63;
-            self.ones = (u32::from_le_bytes(self.ones)
-                + (last as u32) * INCREMENT[upper]
-                - (old as u32) * INCREMENT[upper])
+            self.n_ones = (u32::from_le_bytes(self.n_ones)
+                + (old as u32) * INCREMENT[upper]
+                - (last as u32) * INCREMENT[upper])
                 .to_le_bytes();
             self.bits[upper] = (self.bits[upper] << 1) | (old as u64);
             upper += 1;
@@ -112,7 +115,7 @@ impl Bits256 {
         let output = (self.bits[upper] & 1 << lower) != 0;
 
         self.bits[upper] = pext(self.bits[upper], !(1 << lower));
-        self.ones = (u32::from_le_bytes(self.ones)
+        self.n_ones = (u32::from_le_bytes(self.n_ones)
             - (output as u32) * INCREMENT[upper])
             .to_le_bytes();
 
@@ -124,7 +127,7 @@ impl Bits256 {
 
             debug_assert!(upper < 4); // If upper == 4, upper * 64 > self.len
                                       // Update *previous* version
-            self.ones[upper] += bit as u8;
+            self.n_ones[upper] += bit as u8;
             upper += 1;
         }
 
@@ -144,11 +147,13 @@ impl Bits256 {
         if prev_bit != bit {
             if bit {
                 self.bits[upper] |= 1 << lower;
-                self.ones = (u32::from_le_bytes(self.ones) + INCREMENT[upper])
+                self.n_ones = (u32::from_le_bytes(self.n_ones)
+                    + INCREMENT[upper])
                     .to_le_bytes();
             } else {
                 self.bits[upper] &= !(1 << lower);
-                self.ones = (u32::from_le_bytes(self.ones) - INCREMENT[upper])
+                self.n_ones = (u32::from_le_bytes(self.n_ones)
+                    - INCREMENT[upper])
                     .to_le_bytes();
             }
         }
@@ -157,18 +162,18 @@ impl Bits256 {
     pub fn split(&mut self) -> Bits256 {
         debug_assert!(self.len == 256);
         let new = Bits256 {
-            ones: [
+            n_ones: [
                 0,
-                self.ones[3] - self.ones[2],
-                (self.num_ones() - u32::from(self.ones[2])) as u8,
-                (self.num_ones() - u32::from(self.ones[2])) as u8,
+                self.n_ones[3] - self.n_ones[2],
+                (self.num_ones() - u32::from(self.n_ones[2])) as u8,
+                (self.num_ones() - u32::from(self.n_ones[2])) as u8,
             ],
             len: 128,
             bits: [self.bits[2], self.bits[3], 0, 0],
         };
 
         // TODO: SIMD + HBP to accelerate?
-        self.ones[3] = self.ones[2];
+        self.n_ones[3] = self.n_ones[2];
         self.bits[2] = 0;
         self.bits[3] = 0;
         self.len = 128;
@@ -193,7 +198,7 @@ impl Bits256 {
         } else {
             (self.bits[upper] << (SIZE - u32::from(lower))).count_ones()
         };
-        bits + u32::from(self.ones[upper])
+        bits + u32::from(self.n_ones[upper])
     }
 
     /// Return the position of the `i`th 0 (0-indexed)
@@ -202,19 +207,19 @@ impl Bits256 {
         debug_assert!(index < self.len);
         let index = index as u8;
 
-        let i = if index < 2 * 64 - self.ones[2] {
-            if index < 64 - self.ones[1] {
+        let i = if index < 2 * 64 - self.n_ones[2] {
+            if index < 64 - self.n_ones[1] {
                 0
             } else {
                 1
             }
-        } else if index < 3 * 64 - self.ones[3] {
+        } else if index < 3 * 64 - self.n_ones[3] {
             2
         } else {
             3
         };
 
-        let index = index - ((i as u8) * 64 - self.ones[i]);
+        let index = index - ((i as u8) * 64 - self.n_ones[i]);
 
         (i as u32) * 64 + pdep(1 << index, !self.bits[i]).trailing_zeros()
     }
@@ -225,27 +230,40 @@ impl Bits256 {
         debug_assert!(index < self.len);
         let index = index as u8;
 
-        let i = if index < self.ones[2] {
-            if index < self.ones[1] {
+        let i = if index < self.n_ones[2] {
+            if index < self.n_ones[1] {
                 0
             } else {
                 1
             }
-        } else if index < self.ones[3] {
+        } else if index < self.n_ones[3] {
             2
         } else {
             3
         };
 
-        let index = index - self.ones[i];
+        let index = index - self.n_ones[i];
         (i as u32) * 64 + pdep(1 << index, self.bits[i]).trailing_zeros()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn to_vec(&self) -> Vec<bool> {
+        let mut v = Vec::with_capacity(self.len as usize);
+
+        for i in 0..self.len {
+            let upper = (i >> 6) as usize;
+            let lower = i & 0b0011_1111;
+
+            v.push(self.bits[upper] & (1 << lower) != 0);
+        }
+        v
     }
 }
 
 impl From<bool> for Bits256 {
     fn from(bit: bool) -> Bits256 {
         Bits256 {
-            ones: [bit as u8, 0, 0, 0],
+            n_ones: [0, bit as u8, bit as u8, bit as u8],
             bits: [bit as u64, 0, 0, 0],
             len: 1,
         }
@@ -268,7 +286,7 @@ mod test {
     #[test]
     fn test_bits256_insert_bit() {
         let mut bits256 = Bits256 {
-            ones: [0, 0, 0, 0],
+            n_ones: [0, 0, 0, 0],
             len: 63,
             bits: [0, 0, 0, 0],
         };
@@ -282,7 +300,7 @@ mod test {
         assert_eq!(
             bits256,
             Bits256 {
-                ones: [0, 3, 4, 4],
+                n_ones: [0, 3, 4, 4],
                 len: 68,
                 bits: [0b1 | 1 << 25 | 1 << 27, 1, 0, 0],
             }
@@ -292,7 +310,7 @@ mod test {
     #[test]
     fn test_bits256_remove_bit() {
         let mut bits256 = Bits256 {
-            ones: [0, 3, 5, 5],
+            n_ones: [0, 3, 5, 5],
             len: 68,
             bits: [0b1 | 1 << 25 | 1 << 27, 0b11, 0, 0],
         };
@@ -301,7 +319,7 @@ mod test {
         assert_eq!(
             bits256,
             Bits256 {
-                ones: [0, 4, 5, 5],
+                n_ones: [0, 4, 5, 5],
                 len: 67,
                 bits: [0b1 | 1 << 24 | 1 << 26 | 1 << 63, 0b1, 0, 0],
             }
@@ -311,7 +329,7 @@ mod test {
         assert_eq!(
             bits256,
             Bits256 {
-                ones: [0, 4, 4, 4],
+                n_ones: [0, 4, 4, 4],
                 len: 66,
                 bits: [0b1 | 1 << 24 | 1 << 26 | 1 << 63, 0, 0, 0],
             }
@@ -321,7 +339,7 @@ mod test {
         assert_eq!(
             bits256,
             Bits256 {
-                ones: [0, 3, 3, 3],
+                n_ones: [0, 3, 3, 3],
                 len: 65,
                 bits: [0b1 | 1 << 24 | 1 << 26, 0, 0, 0],
             }
@@ -331,7 +349,7 @@ mod test {
         assert_eq!(
             bits256,
             Bits256 {
-                ones: [0, 2, 2, 2],
+                n_ones: [0, 2, 2, 2],
                 len: 64,
                 bits: [1 << 23 | 1 << 25, 0, 0, 0],
             }
@@ -341,7 +359,7 @@ mod test {
     #[test]
     fn test_bits256_set_bit() {
         let mut bits256 = Bits256 {
-            ones: [0, 0, 0, 0],
+            n_ones: [0, 0, 0, 0],
             len: 256,
             bits: [0, 0, 0, 0],
         };
@@ -350,7 +368,7 @@ mod test {
         assert_eq!(
             bits256,
             Bits256 {
-                ones: [0, 1, 1, 1],
+                n_ones: [0, 1, 1, 1],
                 len: 256,
                 bits: [0b1, 0, 0, 0],
             }
@@ -360,7 +378,7 @@ mod test {
         assert_eq!(
             bits256,
             Bits256 {
-                ones: [0, 1, 1, 1],
+                n_ones: [0, 1, 1, 1],
                 len: 256,
                 bits: [0b1, 0, 0, 1 << 62],
             }
@@ -370,7 +388,7 @@ mod test {
         assert_eq!(
             bits256,
             Bits256 {
-                ones: [0, 2, 2, 2],
+                n_ones: [0, 2, 2, 2],
                 len: 256,
                 bits: [0b1000_0001, 0, 0, 1 << 62],
             }
@@ -380,7 +398,7 @@ mod test {
         assert_eq!(
             bits256,
             Bits256 {
-                ones: [0, 2, 3, 3],
+                n_ones: [0, 2, 3, 3],
                 len: 256,
                 bits: [0b1000_0001, 1 << 37, 0, 1 << 62],
             }
@@ -390,7 +408,7 @@ mod test {
         assert_eq!(
             bits256,
             Bits256 {
-                ones: [0, 2, 3, 3],
+                n_ones: [0, 2, 3, 3],
                 len: 256,
                 bits: [0b1000_0001, 1 << 37, 0, 1 << 16 | 1 << 62]
             }
@@ -405,7 +423,7 @@ mod test {
     #[test]
     fn test_bits256_split() {
         let mut first = Bits256 {
-            ones: [0, 64, 128, 3 * 64],
+            n_ones: [0, 64, 128, 3 * 64],
             len: 256,
             bits: [u64::max_value(); 4],
         };
@@ -414,7 +432,7 @@ mod test {
         assert_eq!(
             first,
             Bits256 {
-                ones: [0, 64, 128, 128],
+                n_ones: [0, 64, 128, 128],
                 len: 128,
                 bits: [u64::max_value(), u64::max_value(), 0, 0],
             }
@@ -422,7 +440,7 @@ mod test {
         assert_eq!(
             second,
             Bits256 {
-                ones: [0, 64, 128, 128],
+                n_ones: [0, 64, 128, 128],
                 len: 128,
                 bits: [u64::max_value(), u64::max_value(), 0, 0],
             }
@@ -432,7 +450,7 @@ mod test {
     #[test]
     fn test_bits256_select_rank_full_zeros() {
         let bits256 = Bits256 {
-            ones: [0, 0, 0, 0],
+            n_ones: [0, 0, 0, 0],
             len: 256,
             bits: [0, 0, 0, 0],
         };
@@ -449,7 +467,7 @@ mod test {
     #[test]
     fn test_bits256_select_rank_full_ones() {
         let bits256 = Bits256 {
-            ones: [0, 64, 128, 3 * 64],
+            n_ones: [0, 64, 128, 3 * 64],
             len: 256,
             bits: [u64::max_value(); 4],
         };
@@ -465,7 +483,7 @@ mod test {
     #[test]
     fn test_bits256_select_rank_half_ones() {
         let bits256 = Bits256 {
-            ones: [0, 32, 64, 80],
+            n_ones: [0, 32, 64, 80],
             len: 160,
             bits: [
                 0x5555_5555_5555_5555,
@@ -497,7 +515,7 @@ mod test {
         fn test_bits256_prop_insert(bits
             in proptest::collection::vec(proptest::bool::ANY, 1..255)) {
             let mut bits256 = Bits256 {
-                ones: [0, 0, 0, 0],
+                n_ones: [0, 0, 0, 0],
                 len: 0,
                 bits: [0, 0, 0, 0],
             };
@@ -509,7 +527,7 @@ mod test {
             // Test struct values
             assert_eq!(bits256.len as usize, bits.len());
             assert_eq!(
-                bits256.ones,
+                bits256.n_ones,
                 [
                     0,
                     bits.iter().zip(0..64).map(|(a, _b)| *a as u8).sum(),
@@ -542,6 +560,20 @@ mod test {
 
                 c0 += !bit as u32;
                 c1 += bit as u32;
+            }
+        }
+
+        #[test]
+        fn test_bits256_prop_insert_zeros(order
+            in proptest::collection::vec(0..255usize, 255)) {
+            let mut bits = Bits256::new();
+            for (i, o) in order.iter().cloned().enumerate() {
+                bits.insert_bit(o % (i + 1), true);
+
+                assert_eq!(bits.to_vec(), vec![true; i + 1]);
+                for j in 1..4 {
+                    assert!(bits.n_ones[j] >= bits.n_ones[j - 1]);
+                }
             }
         }
     }
