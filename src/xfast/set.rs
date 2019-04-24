@@ -1,6 +1,7 @@
 use super::map::XFastMap;
 use std::ops::RangeBounds;
 
+#[derive(Default)]
 pub struct XFastSet {
     map: XFastMap<()>,
 }

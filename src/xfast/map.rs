@@ -6,6 +6,7 @@ use std::ptr;
 
 use fnv::FnvHashMap as HashMap;
 
+#[derive(Default)]
 pub struct XFastMap<T> {
     lss: LevelSearch<T>,
     map: HashMap<u32, Box<LNode<T>>>,
@@ -161,7 +162,7 @@ impl<T> XFastMap<T> {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Default, Eq, PartialEq)]
 struct LevelSearch<T> {
     l0: Descendant<T>,
     l1: HashMap<[u8; 1], Descendant<T>>,
@@ -204,12 +205,10 @@ impl<T> LevelSearch<T> {
             } else {
                 o.get_mut().set_links(bytes[2], node);
             }
+        } else if let HashEntry::Occupied(ref mut o) = v1 {
+            o.get_mut().set_links(bytes[1], node);
         } else {
-            if let HashEntry::Occupied(ref mut o) = v1 {
-                o.get_mut().set_links(bytes[1], node);
-            } else {
-                self.l0.set_links(bytes[0], node);
-            }
+            self.l0.set_links(bytes[0], node);
         }
 
         fn insert_into_entry<T, K>(
@@ -229,9 +228,7 @@ impl<T> LevelSearch<T> {
                     v.insert(desc);
                     true
                 }
-                HashEntry::Occupied(mut o) => {
-                    o.get_mut().merge(byte, node)
-                }
+                HashEntry::Occupied(mut o) => o.get_mut().merge(byte, node),
             }
         }
         if !insert_into_entry(bytes[3], node, v3) {
@@ -299,19 +296,19 @@ impl<T> LevelSearch<T> {
             } else {
                 (bytes[2], &desc)
             }
+        } else if let Some(desc) = self.l1.get(&[bytes[0]]) {
+            (bytes[1], &desc)
         } else {
-            if let Some(desc) = self.l1.get(&[bytes[0]]) {
-                (bytes[1], &desc)
-            } else {
-                (bytes[0], &self.l0)
-            }
+            (bytes[0], &self.l0)
         }
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+type Ptr<T> = ptr::NonNull<LNode<T>>;
+
+#[derive(Debug, Default, Eq, PartialEq)]
 struct Descendant<T> {
-    bounds: BTreeMap<u8, (ptr::NonNull<LNode<T>>, ptr::NonNull<LNode<T>>)>,
+    bounds: BTreeMap<u8, (Ptr<T>, Ptr<T>)>,
 }
 
 impl<T> Descendant<T> {
