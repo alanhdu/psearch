@@ -39,6 +39,23 @@ pub struct Bits256 {
 }
 
 impl Bits256 {
+    pub fn new() -> Bits256 {
+        Bits256 {
+            ones: [0; 4],
+            len: 0,
+            bits: [0; 4],
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.len as usize
+    }
+
+    pub fn is_full(&self) -> bool {
+        debug_assert!(self.len <= 256);
+        self.len == 256
+    }
+
     pub fn num_ones(&self) -> u32 {
         u32::from(self.ones[3]) + self.bits[3].count_ones()
     }
@@ -79,6 +96,8 @@ impl Bits256 {
             upper += 1;
         }
     }
+
+    /// Append a bit at the end
 
     /// Remove a bit at our index
     pub fn remove_bit(&mut self, index: usize) -> bool {
@@ -133,6 +152,28 @@ impl Bits256 {
                     .to_le_bytes();
             }
         }
+    }
+
+    pub fn split(&mut self) -> Bits256 {
+        debug_assert!(self.len == 256);
+        let new = Bits256 {
+            ones: [
+                0,
+                self.ones[3] - self.ones[2],
+                (self.num_ones() - u32::from(self.ones[2])) as u8,
+                (self.num_ones() - u32::from(self.ones[2])) as u8,
+            ],
+            len: 128,
+            bits: [self.bits[2], self.bits[3], 0, 0],
+        };
+
+        // TODO: SIMD + HBP to accelerate?
+        self.ones[3] = self.ones[2];
+        self.bits[2] = 0;
+        self.bits[3] = 0;
+        self.len = 128;
+
+        new
     }
 
     /// Return the number of 0s before the `i`th position
@@ -198,6 +239,16 @@ impl Bits256 {
 
         let index = index - self.ones[i];
         (i as u32) * 64 + pdep(1 << index, self.bits[i]).trailing_zeros()
+    }
+}
+
+impl From<bool> for Bits256 {
+    fn from(bit: bool) -> Bits256 {
+        Bits256 {
+            ones: [bit as u8, 0, 0, 0],
+            bits: [bit as u64, 0, 0, 0],
+            len: 1,
+        }
     }
 }
 
@@ -348,6 +399,33 @@ mod test {
         assert_eq!(
             (0..5).map(|b| bits256.select1(b)).collect::<Vec<_>>(),
             vec![0, 7, 101, 208, 254]
+        );
+    }
+
+    #[test]
+    fn test_bits256_split() {
+        let mut first = Bits256 {
+            ones: [0, 64, 128, 3 * 64],
+            len: 256,
+            bits: [u64::max_value(); 4],
+        };
+        let second = first.split();
+
+        assert_eq!(
+            first,
+            Bits256 {
+                ones: [0, 64, 128, 128],
+                len: 128,
+                bits: [u64::max_value(), u64::max_value(), 0, 0],
+            }
+        );
+        assert_eq!(
+            second,
+            Bits256 {
+                ones: [0, 64, 128, 128],
+                len: 128,
+                bits: [u64::max_value(), u64::max_value(), 0, 0],
+            }
         );
     }
 
