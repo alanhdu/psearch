@@ -60,6 +60,28 @@ pub(crate) fn rank(haystack: &[u32; 16], needle: u32) -> u8 {
     }
 }
 
+pub(crate) fn rank_diff(big: &[u32; 16], small: &[u32; 16], needle: u32) -> u8 {
+    unsafe {
+        let needle = _mm256_set1_epi32(std::mem::transmute::<u32, i32>(needle));
+
+        let haystack1 = _mm256_sub_epi32(loadu(big), loadu(small));
+        let cmp1 =
+            _mm256_cmpeq_epi32(_mm256_min_epu32(haystack1, needle), needle);
+
+        let haystack2 = _mm256_sub_epi32(loadu(&big[8..]), loadu(&small[8..]));
+        let cmp2 =
+            _mm256_cmpeq_epi32(_mm256_min_epu32(haystack2, needle), needle);
+
+        let mask1 = std::mem::transmute::<i32, u32>(_mm256_movemask_epi8(cmp1));
+        let mask2 = std::mem::transmute::<i32, u32>(_mm256_movemask_epi8(cmp2));
+        let mask = (u64::from(mask2) << 32) | u64::from(mask1);
+        if mask == 0 {
+            16
+        } else {
+            (mask.trailing_zeros() / 4) as u8
+        }
+    }
+}
 pub(crate) fn increment(values: &mut [u32; 16], mut pos: usize) {
     debug_assert!(values.iter().all(|v| *v < i32::max_value() as u32));
     unsafe {

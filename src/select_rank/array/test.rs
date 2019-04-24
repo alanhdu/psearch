@@ -27,6 +27,23 @@ fn test_rank() {
 }
 
 #[test]
+fn test_rank_diff() {
+    let big: [u32; 16] = [
+        0, 2, 4, 6, 10, 16, 26, 42, 68, 110, 178, 288, 466, 754, 1220, 1974,
+    ];
+
+    let small: [u32; 16] = [
+        0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987,
+    ];
+
+    for (i, h) in small.iter().cloned().enumerate() {
+        assert_eq!(rank_diff(&big, &small, h), i as u8);
+    }
+    assert_eq!(rank_diff(&big, &small, 986), 15);
+    assert_eq!(rank_diff(&big, &small, 988), 16);
+}
+
+#[test]
 fn test_increment() {
     let mut values: [u32; 16] = [0; 16];
 
