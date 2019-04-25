@@ -7,17 +7,17 @@ const MIN_SIZE: usize = B - 1;
 const CAPACITY: usize = 16;
 
 pub struct BitVec {
-    root: Node,
+    root: Box<Node>,
 }
 
 impl BitVec {
     pub fn new() -> BitVec {
         BitVec {
-            root: Node {
+            root: Box::new(Node {
                 counts: [0; 16],
                 ones: [0; 16],
                 ptrs: [PackedPtr::null(); CAPACITY],
-            },
+            }),
         }
     }
 
@@ -48,15 +48,13 @@ impl BitVec {
         let mut node: &mut Node = &mut self.root;
 
         loop {
+            node.debug_assert_indices();
+
             let rank = array::rank(&node.counts, index) as usize;
             if rank > 0 {
                 index -= node.counts[rank - 1];
             }
-
-            array::increment(&mut node.counts, rank);
-            if bit {
-                array::increment(&mut node.ones, rank);
-            }
+            node.add_bit_count(rank, bit);
 
             // Use an unsafe *mut raw pointer to work around borrow checker
             // restrictions (we are "releasing" the earlier borrows when
@@ -81,36 +79,50 @@ impl BitVec {
                         stack.push((node, rank));
                         for (node, rank) in stack.iter().rev().cloned() {
                             let node = unsafe { &mut *node };
-
                             if !node.is_full() {
                                 node.insert(rank, ptr);
                                 node.counts[rank] -= ptr.len() as u32;
                                 node.ones[rank] -= ptr.num_ones();
+                                node.debug_assert_indices();
                                 return;
                             } else {
                                 let mut new = Box::new(node.split());
                                 if rank >= 8 {
                                     new.insert(rank - 8, ptr);
+                                    new.counts[rank - 8] -= ptr.len() as u32;
+                                    new.ones[rank - 8] -= ptr.num_ones();
                                 } else {
                                     node.insert(rank, ptr);
+                                    node.counts[rank] -= ptr.len() as u32;
+                                    node.ones[rank] -= ptr.num_ones();
                                 }
+
+                                new.debug_assert_indices();
+                                node.debug_assert_indices();
                                 ptr = PackedPtr::from(new);
                             }
                         }
 
                         // We've recursed all the way to the root
                         debug_assert!(!self.root.is_full());
-                        debug_assert!(self.root.ptrs[10].is_null());
+                        debug_assert!(self.root.ptrs[9].is_null());
 
-                        // This is not strictly speaking the B+-tree algorithm.
-                        // Instead of creating a new root node with only
-                        // 2 children, we instead split of half the node
-                        // and re-append it at the end
-                        if self.root.ptrs[9].is_null() {
-                            self.root.insert(8, ptr);
-                        } else {
-                            self.root.insert(9, ptr);
-                        }
+                        let len = self.root.len() + ptr.len();
+                        let n_ones = self.root.num_ones() + ptr.num_ones();
+
+                        let root = std::mem::replace(
+                            &mut self.root,
+                            Box::new(Node {
+                                counts: [len as u32; 16],
+                                ones: [n_ones; 16],
+                                ptrs: [PackedPtr::null(); CAPACITY],
+                            }),
+                        );
+                        self.root.counts[0] = root.len() as u32;
+                        self.root.ones[0] = root.num_ones() as u32;
+                        self.root.ptrs[0] = PackedPtr::from(root);
+                        self.root.ptrs[1] = ptr;
+                        self.root.debug_assert_indices();
                     } else {
                         leaf.insert_bit(index as usize, bit);
                     }
@@ -227,6 +239,7 @@ impl Drop for Node {
 
 impl Node {
     fn split(&mut self) -> Node {
+        dbg!(&self);
         debug_assert!(!self.ptrs[15].is_null());
         debug_assert!(self.counts[15] > self.counts[14]);
 
@@ -236,15 +249,17 @@ impl Node {
             ptrs: [PackedPtr::null(); CAPACITY],
         };
 
+        dbg!(self.counts, node.counts);
         array::split(&mut self.counts, &mut node.counts);
+        dbg!(self.counts, node.counts);
         array::split(&mut self.ones, &mut node.ones);
 
         self.ptrs[8..].swap_with_slice(&mut node.ptrs[..8]);
+        dbg!(&self, &node);
         node
     }
 
     fn insert(&mut self, rank: usize, ptr: PackedPtr) {
-        dbg!(self.counts, rank, ptr.len());
         // We have space!
         debug_assert!(rank < CAPACITY - 1);
         debug_assert!(self.ptrs[CAPACITY - 1].is_null());
@@ -266,8 +281,14 @@ impl Node {
                 CAPACITY - 1 - rank,
             );
         }
-        dbg!(self.counts, rank, ptr.len(), ptr.num_ones(), ptr);
         self.ptrs[rank + 1] = ptr;
+    }
+
+    fn add_bit_count(&mut self, rank: usize, bit: bool) {
+        array::increment(&mut self.counts, rank);
+        if bit {
+            array::increment(&mut self.ones, rank);
+        }
     }
 
     fn is_full(&self) -> bool {
@@ -284,6 +305,28 @@ impl Node {
 
     fn len(&self) -> usize {
         self.counts[15] as usize
+    }
+
+    fn debug_assert_indices(&self) {
+        let mut len = 0;
+        let mut n_ones = 0;
+
+        for (i, ptr) in self.ptrs.iter().enumerate() {
+            match ptr.expand() {
+                Ptr::None => {}
+                Ptr::Leaf(l) => {
+                    len += l.len() as u32;
+                    n_ones += l.num_ones();
+                }
+                Ptr::Inner(i) => {
+                    len += i.len() as u32;
+                    n_ones += i.num_ones();
+                }
+            }
+
+            debug_assert_eq!(len, self.counts[i]);
+            debug_assert_eq!(n_ones, self.ones[i]);
+        }
     }
 
     #[cfg(test)]
@@ -356,7 +399,6 @@ impl PackedPtr {
     }
 
     fn len(self) -> usize {
-        debug_assert!(!self.is_null());
         match self.expand() {
             Ptr::None => unreachable!(),
             Ptr::Leaf(leaf) => leaf.len(),
@@ -546,7 +588,7 @@ mod test {
     }
 
     #[test]
-    fn test_node_split() {
+    fn test_node_split_1() {
         let mut node = Node {
             counts: [256; 16],
             ones: [256; 16],
@@ -597,23 +639,19 @@ mod test {
         );
     }
 
-    /*
     #[test]
     fn test_bitvec_multilevel_half_zeros() {
         let mut bits = BitVec::new();
         let mut expected = Vec::with_capacity(128 + 128 * CAPACITY);
         for i in 0..2048 {
             bits.insert(i, true);
-            bits.insert(i, false);
-
             expected.insert(i, true);
-            expected.insert(i, false);
-
             assert_eq!(expected, bits.root.to_vec());
 
-            for j in 0..16 {
-                assert!(bits.root.counts[j] <= 256 * j as u32 + 256);
-            }
+            bits.insert(i, false);
+            expected.insert(i, false);
+            assert_eq!(expected, bits.root.to_vec());
+            assert_eq!(expected.len(), bits.len());
         }
         // bits should be a palindrome of 0^k 1^k
 
@@ -631,5 +669,4 @@ mod test {
             assert_eq!(bits.select1(i), 2048 + i);
         }
     }
-    */
 }
