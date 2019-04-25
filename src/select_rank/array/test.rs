@@ -72,3 +72,26 @@ fn test_increment() {
         assert_eq!(values, expected[i as usize]);
     }
 }
+
+#[test]
+fn test_split() {
+    let mut src: [u32; 16] = [
+        0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987,
+    ];
+    let mut dest: [u32; 16] = [0; 16];
+
+    split(&mut src, &mut dest);
+
+    assert_eq!(
+        src,
+        //  2  3  4  5  6  7   8 ...
+        [0, 1, 2, 3, 5, 8, 13, 21, 21, 21, 21, 21, 21, 21, 21, 21]
+    );
+    assert_eq!(
+        dest,
+        [
+            13, 34, 68, 123, 212, 356, 589, 966, 966, 966, 966, 966, 966, 966,
+            966, 966
+        ]
+    );
+}

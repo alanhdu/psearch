@@ -29,13 +29,13 @@ fn pext(src: u64, mask: u64) -> u64 {
 /// in the bitstring
 #[derive(Debug, Eq, PartialEq)]
 pub struct Bits256 {
-    n_ones: [u8; 4],
-    len: u32, // NOTE: this actual fits in a u8, if we need more space
+    pub(super) n_ones: [u8; 4],
+    pub(super) len: u32, // NOTE: this actual fits in a u8, if we need more space
     /// Containers holding our actual bitstring. Within a u64, bits go
     /// from right to left (i.e. bit number 0 is the *least* significant
     /// bit). This allows for efficient implementation of SELECT using
     /// pdep
-    bits: [u64; 4],
+    pub(super) bits: [u64; 4],
 }
 
 impl Bits256 {

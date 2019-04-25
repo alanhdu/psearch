@@ -82,6 +82,7 @@ pub(crate) fn rank_diff(big: &[u32; 16], small: &[u32; 16], needle: u32) -> u8 {
         }
     }
 }
+
 pub(crate) fn increment(values: &mut [u32; 16], mut pos: usize) {
     debug_assert!(values.iter().all(|v| *v < i32::max_value() as u32));
     unsafe {
@@ -95,5 +96,18 @@ pub(crate) fn increment(values: &mut [u32; 16], mut pos: usize) {
         let half = loadu(&values[8..]);
         let inc = loadu(&INCREMENT[16 - pos..]);
         storeu(&mut values[8..], _mm256_add_epi32(half, inc));
+    }
+}
+
+pub(crate) fn split(src: &mut [u32; 16], dest: &mut [u32; 16]) {
+    unsafe {
+        let bottom = _mm256_set1_epi32(std::mem::transmute::<u32, i32>(src[7]));
+        let top = _mm256_set1_epi32(std::mem::transmute::<u32, i32>(
+            src[15] - src[7],
+        ));
+
+        storeu(dest, _mm256_sub_epi32(loadu(&src[8..]), bottom));
+        storeu(&mut src[8..], bottom);
+        storeu(&mut dest[8..], top);
     }
 }
