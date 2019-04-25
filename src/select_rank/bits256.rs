@@ -515,8 +515,8 @@ mod test {
 
     proptest! {
         #[test]
-        fn test_bits256_prop_insert(input in proptest::collection::vec(
-            (prop::num::u8::ANY, prop::bool::ANY), 1..255)
+        fn test_bits256_prop_insert(input
+            in prop::collection::vec(any::<(u8, bool)>(), 1..255)
         ) {
             let mut bits256 = Bits256 {
                 n_ones: [0, 0, 0, 0],
@@ -530,15 +530,15 @@ mod test {
                 let order = order as usize % (bits.len() + 1);
                 bits256.insert_bit(order, bit);
                 bits.insert(order, bit);
-                assert_eq!(bits256.to_vec(), bits);
+                prop_assert_eq!(&bits256.to_vec(), &bits);
                 for j in 1..4 {
-                    assert!(bits256.n_ones[j] >= bits256.n_ones[j - 1]);
+                    prop_assert!(bits256.n_ones[j] >= bits256.n_ones[j - 1]);
                 }
             }
 
             // Test struct values
-            assert_eq!(bits256.len as usize, bits.len());
-            assert_eq!(
+            prop_assert_eq!(bits256.len as usize, bits.len());
+            prop_assert_eq!(
                 bits256.n_ones,
                 [
                     0,
@@ -548,27 +548,27 @@ mod test {
                 ]
             );
 
-            assert_eq!(
+            prop_assert_eq!(
                 bits256.num_ones(),
                 bits.iter().cloned().filter(|b| *b).count() as u32
             );
-            assert_eq!(
+            prop_assert_eq!(
                 bits256.num_zeros(),
                 bits.iter().cloned().filter(|b| !*b).count() as u32
             );
 
             for i in 0..bits256.num_ones() {
-                assert!(bits[bits256.select1(i) as usize]);
+                prop_assert!(bits[bits256.select1(i) as usize]);
             }
             for i in 0..bits256.num_zeros() {
-                assert!(!bits[bits256.select0(i) as usize]);
+                prop_assert!(!bits[bits256.select0(i) as usize]);
             }
 
             let mut c0 = 0;
             let mut c1 = 0;
             for (i, bit) in bits.iter().cloned().enumerate() {
-                assert_eq!(bits256.rank0(i as u32), c0);
-                assert_eq!(bits256.rank1(i as u32), c1);
+                prop_assert_eq!(bits256.rank0(i as u32), c0);
+                prop_assert_eq!(bits256.rank1(i as u32), c1);
 
                 c0 += !bit as u32;
                 c1 += bit as u32;
@@ -577,14 +577,15 @@ mod test {
 
         #[test]
         fn test_bits256_prop_insert_ones(order
-            in proptest::collection::vec(0..255usize, 255)) {
+            in proptest::collection::vec(0..255usize, 255)
+        ) {
             let mut bits = Bits256::new();
             for (i, o) in order.iter().cloned().enumerate() {
                 bits.insert_bit(o % (i + 1), true);
 
-                assert_eq!(bits.to_vec(), vec![true; i + 1]);
+                prop_assert_eq!(bits.to_vec(), vec![true; i + 1]);
                 for j in 1..4 {
-                    assert!(bits.n_ones[j] >= bits.n_ones[j - 1]);
+                    prop_assert!(bits.n_ones[j] >= bits.n_ones[j - 1]);
                 }
             }
         }

@@ -446,6 +446,7 @@ impl From<Box<Bits256>> for PackedPtr {
 #[cfg(test)]
 mod test {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn test_bitvec_insert_bit() {
@@ -640,10 +641,11 @@ mod test {
     }
 
     #[test]
-    fn test_bitvec_multilevel_half_zeros() {
+    fn test_bitvec_multilevel_palindrome() {
+        assert!(2 * 2400 > CAPACITY * 256);
         let mut bits = BitVec::new();
-        let mut expected = Vec::with_capacity(4096);
-        for i in 0..2048 {
+        let mut expected = Vec::with_capacity(4800);
+        for i in 0..2400 {
             bits.insert(i, true);
             expected.insert(i, true);
             assert_eq!(expected, bits.root.to_vec());
@@ -655,18 +657,56 @@ mod test {
         }
         // bits should be a palindrome of 0^k 1^k
 
-        for i in 0..2048 {
+        for i in 0..2400 {
             assert_eq!(bits.rank0(i), i);
             assert_eq!(bits.rank1(i), 0)
         }
-        for i in 2048..4096 {
-            assert_eq!(bits.rank0(i), 2048);
-            assert_eq!(bits.rank1(i), i - 2048);
+        for i in 2400..4800 {
+            assert_eq!(bits.rank0(i), 2400);
+            assert_eq!(bits.rank1(i), i - 2400);
         }
 
-        for i in 0..2048 {
+        for i in 0..2400 {
             assert_eq!(bits.select0(i), i);
-            assert_eq!(bits.select1(i), 2048 + i);
+            assert_eq!(bits.select1(i), 2400 + i);
+        }
+    }
+
+    proptest! {
+        #[test]
+        #[ignore]   // Too slow to run normally
+        fn test_bitvec_proptest_insert(input
+            in prop::collection::vec(any::<(bool, usize)>(), 1..65536)
+        ) {
+            let mut expected = Vec::with_capacity(input.len());
+            let mut bits = BitVec::new();
+
+            for (bit, order) in input.iter().cloned() {
+                let order = order % (expected.len() + 1);
+                bits.insert(order, bit);
+                expected.insert(order, bit);
+
+                prop_assert_eq!(&expected, &bits.root.to_vec());
+            }
+
+            let mut n_ones = 0;
+            let mut n_zeros = 0;
+            for (i, bit) in expected.iter().cloned().enumerate() {
+                prop_assert_eq!(bits.rank0(i as u32), n_zeros);
+                prop_assert_eq!(bits.rank1(i as u32), n_ones);
+
+                n_zeros += !bit as u32;
+                n_ones += bit as u32;
+            }
+            prop_assert_eq!(n_zeros, bits.len() as u32 - bits.num_ones());
+            prop_assert_eq!(n_ones, bits.num_ones());
+
+            for i in 0..n_zeros {
+                prop_assert_eq!(expected[bits.select0(i) as usize], false);
+            }
+            for i in 0..n_ones {
+                prop_assert_eq!(expected[bits.select1(i) as usize], true);
+            }
         }
     }
 }
