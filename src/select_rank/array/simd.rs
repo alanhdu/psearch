@@ -99,7 +99,39 @@ pub(crate) fn increment(values: &mut [u32; 16], mut pos: usize) {
     }
 }
 
+pub(crate) fn add(values: &mut [u32; 16], mut pos: usize, mag: i32) {
+    debug_assert!(values.iter().all(|v| *v < i32::max_value() as u32));
+    unsafe {
+        let magnitude = _mm256_set1_epi32(mag);
+        if pos < 8 {
+            let half = loadu(values);
+            let inc = loadu(&INCREMENT[8 - pos..]);
+            let inc = _mm256_mullo_epi32(magnitude, inc);
+            storeu(values, _mm256_add_epi32(half, inc));
+            pos = 8;
+        }
+        let half = loadu(&values[8..]);
+        let inc = loadu(&INCREMENT[16 - pos..]);
+        let inc = _mm256_mullo_epi32(magnitude, inc);
+        storeu(&mut values[8..], _mm256_add_epi32(half, inc));
+    }
+}
+
+/// Let src be some accumulator sequence.
+///
+/// This executes the equivalent of:
+/// ```compile_fail
+/// for i in 0..8 {
+///     dest[i] = src[i + 8] - src[7];
+///     dest[i + 8] = src[15] - src[7];
+///     src[i + 8] -= src[7];
+/// }
+/// ```
+///
+///
 pub(crate) fn split(src: &mut [u32; 16], dest: &mut [u32; 16]) {
+    debug_assert!(src.iter().all(|v| *v < i32::max_value() as u32));
+    debug_assert!(dest.iter().all(|v| *v < i32::max_value() as u32));
     unsafe {
         let bottom = _mm256_set1_epi32(std::mem::transmute::<u32, i32>(src[7]));
         let top = _mm256_set1_epi32(std::mem::transmute::<u32, i32>(
