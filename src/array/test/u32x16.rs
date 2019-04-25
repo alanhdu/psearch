@@ -1,4 +1,4 @@
-use super::*;
+use crate::array::u32x16;
 
 #[test]
 fn test_index() {
@@ -7,9 +7,9 @@ fn test_index() {
     ];
 
     for (i, h) in haystack.iter().cloned().enumerate() {
-        assert_eq!(index(&haystack, h), Some(i as u8));
+        assert_eq!(u32x16::index(&haystack, h), Some(i as u8));
     }
-    assert_eq!(index(&haystack, 123), None);
+    assert_eq!(u32x16::index(&haystack, 123), None);
 }
 
 #[test]
@@ -19,11 +19,11 @@ fn test_rank() {
     ];
 
     for (i, h) in haystack.iter().cloned().enumerate() {
-        assert_eq!(rank(&haystack, h), i as u8);
+        assert_eq!(u32x16::rank(&haystack, h), i as u8);
     }
 
-    assert_eq!(rank(&haystack, 986), 15);
-    assert_eq!(rank(&haystack, 988), 16);
+    assert_eq!(u32x16::rank(&haystack, 986), 15);
+    assert_eq!(u32x16::rank(&haystack, 988), 16);
 }
 
 #[test]
@@ -37,10 +37,10 @@ fn test_rank_diff() {
     ];
 
     for (i, h) in small.iter().cloned().enumerate() {
-        assert_eq!(rank_diff(&big, &small, h), i as u8);
+        assert_eq!(u32x16::rank_diff(&big, &small, h), i as u8);
     }
-    assert_eq!(rank_diff(&big, &small, 986), 15);
-    assert_eq!(rank_diff(&big, &small, 988), 16);
+    assert_eq!(u32x16::rank_diff(&big, &small, 986), 15);
+    assert_eq!(u32x16::rank_diff(&big, &small, 988), 16);
 }
 
 #[test]
@@ -68,7 +68,7 @@ fn test_increment() {
     ];
 
     for i in 0..=16 {
-        increment(&mut values, i);
+        u32x16::increment(&mut values, i);
         assert_eq!(values, expected[i as usize]);
     }
 }
@@ -98,7 +98,7 @@ fn test_add() {
     ];
 
     for i in 0..=16 {
-        add(&mut values, i, 1);
+        u32x16::add(&mut values, i, 1);
         assert_eq!(values, expected[i as usize]);
     }
 }
@@ -110,8 +110,7 @@ fn test_split() {
     ];
     let mut dest: [u32; 16] = [0; 16];
 
-    split(&mut src, &mut dest);
-
+    u32x16::split(&mut src, &mut dest);
     assert_eq!(
         src,
         //  2  3  4  5  6  7   8 ...

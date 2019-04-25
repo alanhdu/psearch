@@ -1,4 +1,3 @@
-mod array;
 mod bits256;
 mod bitvec;
 

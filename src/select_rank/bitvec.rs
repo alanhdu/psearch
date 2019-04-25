@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use super::array;
+use crate::array::u32x16;
 use super::Bits256;
 
 const B: usize = 8;
@@ -102,7 +102,7 @@ impl BitVec {
         loop {
             node.debug_assert_indices();
 
-            let rank = array::rank(&node.lens, index) as usize;
+            let rank = u32x16::rank(&node.lens, index) as usize;
             if rank > 0 {
                 index -= node.lens[rank - 1];
             }
@@ -146,7 +146,7 @@ impl BitVec {
 
         loop {
             let rank =
-                array::rank_diff(&node.lens, &node.n_ones, index + 1) as usize;
+                u32x16::rank_diff(&node.lens, &node.n_ones, index + 1) as usize;
             if rank > 0 {
                 count += node.lens[rank - 1];
                 index -= node.lens[rank - 1] - node.n_ones[rank - 1];
@@ -170,7 +170,7 @@ impl BitVec {
         let mut count = 0;
 
         loop {
-            let rank = array::rank(&node.n_ones, index + 1) as usize;
+            let rank = u32x16::rank(&node.n_ones, index + 1) as usize;
             if rank > 0 {
                 count += node.lens[rank - 1];
                 index -= node.n_ones[rank - 1];
@@ -200,7 +200,7 @@ impl BitVec {
         let mut node: &Node = &self.root;
         let mut count = 0;
         loop {
-            let rank = array::rank(&node.lens, index + 1) as usize;
+            let rank = u32x16::rank(&node.lens, index + 1) as usize;
             if rank > 0 {
                 count += node.n_ones[rank - 1];
                 index -= node.lens[rank - 1];
@@ -253,8 +253,8 @@ impl Node {
             ptrs: [PackedPtr::null(); CAPACITY],
         };
 
-        array::split(&mut self.lens, &mut node.lens);
-        array::split(&mut self.n_ones, &mut node.n_ones);
+        u32x16::split(&mut self.lens, &mut node.lens);
+        u32x16::split(&mut self.n_ones, &mut node.n_ones);
 
         self.ptrs[8..].swap_with_slice(&mut node.ptrs[..8]);
         node
@@ -285,9 +285,9 @@ impl Node {
     }
 
     fn add_bit_count(&mut self, rank: usize, bit: bool) {
-        array::increment(&mut self.lens, rank);
+        u32x16::increment(&mut self.lens, rank);
         if bit {
-            array::increment(&mut self.n_ones, rank);
+            u32x16::increment(&mut self.n_ones, rank);
         }
     }
 
