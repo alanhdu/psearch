@@ -27,7 +27,7 @@ fn pext(src: u64, mask: u64) -> u64 {
 /// We will assume that the bits are "packed" -- in other words, that if
 /// this bitstring contains n bits, then it will be the *first* n bits
 /// in the bitstring
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Default, Eq, PartialEq)]
 pub struct Bits256 {
     pub(super) n_ones: [u8; 4],
     pub(super) len: u32, // NOTE: this actual fits in a u8, if we need more space
@@ -45,6 +45,10 @@ impl Bits256 {
             len: 0,
             bits: [0; 4],
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
     }
 
     pub fn len(&self) -> usize {

@@ -14,49 +14,45 @@ impl BitVec {
     pub fn new() -> BitVec {
         BitVec {
             root: Box::new(Node {
-                counts: [0; 16],
-                ones: [0; 16],
+                lens: [0; 16],
+                n_ones: [0; 16],
                 ptrs: [PackedPtr::null(); CAPACITY],
             }),
         }
     }
 
     pub fn len(&self) -> usize {
-        self.root.counts[15] as usize
+        self.root.lens[15] as usize
     }
 
     pub fn num_ones(&self) -> u32 {
-        self.root.ones[15]
+        self.root.n_ones[15]
     }
 
     pub fn num_zeros(&self) -> u32 {
         self.len() as u32 - self.num_ones()
     }
 
-    fn split(
-        &mut self,
-        stack: Vec<(*mut Node, usize)>,
-        new: Box<Bits256>,
-    ) {
+    fn split(&mut self, stack: Vec<(*mut Node, usize)>, new: Box<Bits256>) {
         let mut ptr = PackedPtr::from(new);
         for (node, rank) in stack.iter().rev().cloned() {
             let node = unsafe { &mut *node };
             if !node.is_full() {
                 node.insert(rank, ptr);
-                node.counts[rank] -= ptr.len() as u32;
-                node.ones[rank] -= ptr.num_ones();
+                node.lens[rank] -= ptr.len() as u32;
+                node.n_ones[rank] -= ptr.num_ones();
                 node.debug_assert_indices();
                 return;
             } else {
                 let mut new = Box::new(node.split());
                 if rank >= 8 {
                     new.insert(rank - 8, ptr);
-                    new.counts[rank - 8] -= ptr.len() as u32;
-                    new.ones[rank - 8] -= ptr.num_ones();
+                    new.lens[rank - 8] -= ptr.len() as u32;
+                    new.n_ones[rank - 8] -= ptr.num_ones();
                 } else {
                     node.insert(rank, ptr);
-                    node.counts[rank] -= ptr.len() as u32;
-                    node.ones[rank] -= ptr.num_ones();
+                    node.lens[rank] -= ptr.len() as u32;
+                    node.n_ones[rank] -= ptr.num_ones();
                 }
 
                 new.debug_assert_indices();
@@ -75,13 +71,13 @@ impl BitVec {
         let root = std::mem::replace(
             &mut self.root,
             Box::new(Node {
-                counts: [len as u32; 16],
-                ones: [n_ones; 16],
+                lens: [len as u32; 16],
+                n_ones: [n_ones; 16],
                 ptrs: [PackedPtr::null(); CAPACITY],
             }),
         );
-        self.root.counts[0] = root.len() as u32;
-        self.root.ones[0] = root.num_ones() as u32;
+        self.root.lens[0] = root.len() as u32;
+        self.root.n_ones[0] = root.num_ones() as u32;
         self.root.ptrs[0] = PackedPtr::from(root);
         self.root.ptrs[1] = ptr;
         self.root.debug_assert_indices();
@@ -91,8 +87,8 @@ impl BitVec {
         debug_assert!(index <= self.len());
         if index == 0 && self.len() == 0 {
             self.root.ptrs[0] = PackedPtr::from(Box::new(Bits256::from(bit)));
-            self.root.counts = [1; 16];
-            self.root.ones = [bit as u32; 16];
+            self.root.lens = [1; 16];
+            self.root.n_ones = [bit as u32; 16];
             return;
         }
 
@@ -104,9 +100,9 @@ impl BitVec {
         loop {
             node.debug_assert_indices();
 
-            let rank = array::rank(&node.counts, index) as usize;
+            let rank = array::rank(&node.lens, index) as usize;
             if rank > 0 {
-                index -= node.counts[rank - 1];
+                index -= node.lens[rank - 1];
             }
             node.add_bit_count(rank, bit);
 
@@ -141,17 +137,17 @@ impl BitVec {
 
     /// Return the position of the `i`th 0 (0-indexed)
     pub fn select0(&self, mut index: u32) -> u32 {
-        debug_assert!(index < self.root.counts[15] - self.root.ones[15]);
+        debug_assert!(index < self.root.lens[15] - self.root.n_ones[15]);
 
         let mut node: &Node = &self.root;
         let mut count = 0;
 
         loop {
             let rank =
-                array::rank_diff(&node.counts, &node.ones, index + 1) as usize;
+                array::rank_diff(&node.lens, &node.n_ones, index + 1) as usize;
             if rank > 0 {
-                count += node.counts[rank - 1];
-                index -= node.counts[rank - 1] - node.ones[rank - 1];
+                count += node.lens[rank - 1];
+                index -= node.lens[rank - 1] - node.n_ones[rank - 1];
             }
 
             match node.ptrs[rank].expand() {
@@ -167,15 +163,15 @@ impl BitVec {
     }
     /// Return the position of the `i`th 1 (0-indexed)
     pub fn select1(&self, mut index: u32) -> u32 {
-        debug_assert!(index < self.root.ones[15]);
+        debug_assert!(index < self.root.n_ones[15]);
         let mut node: &Node = &self.root;
         let mut count = 0;
 
         loop {
-            let rank = array::rank(&node.ones, index + 1) as usize;
+            let rank = array::rank(&node.n_ones, index + 1) as usize;
             if rank > 0 {
-                count += node.counts[rank - 1];
-                index -= node.ones[rank - 1];
+                count += node.lens[rank - 1];
+                index -= node.n_ones[rank - 1];
             }
 
             match node.ptrs[rank].expand() {
@@ -202,10 +198,10 @@ impl BitVec {
         let mut node: &Node = &self.root;
         let mut count = 0;
         loop {
-            let rank = array::rank(&node.counts, index + 1) as usize;
+            let rank = array::rank(&node.lens, index + 1) as usize;
             if rank > 0 {
-                count += node.ones[rank - 1];
-                index -= node.counts[rank - 1];
+                count += node.n_ones[rank - 1];
+                index -= node.lens[rank - 1];
             }
 
             match node.ptrs[rank].expand() {
@@ -223,8 +219,8 @@ impl BitVec {
 
 #[derive(Default, Debug, Eq, PartialEq)]
 struct Node {
-    counts: [u32; 16],
-    ones: [u32; 16],
+    lens: [u32; 16],
+    n_ones: [u32; 16],
     ptrs: [PackedPtr; CAPACITY],
 }
 
@@ -246,28 +242,23 @@ impl Drop for Node {
 
 impl Node {
     fn split(&mut self) -> Node {
-        dbg!(&self);
         debug_assert!(!self.ptrs[15].is_null());
-        debug_assert!(self.counts[15] > self.counts[14]);
+        debug_assert!(self.lens[15] > self.lens[14]);
 
         let mut node = Node {
-            counts: [0; 16],
-            ones: [0; 16],
+            lens: [0; 16],
+            n_ones: [0; 16],
             ptrs: [PackedPtr::null(); CAPACITY],
         };
 
-        dbg!(self.counts, node.counts);
-        array::split(&mut self.counts, &mut node.counts);
-        dbg!(self.counts, node.counts);
-        array::split(&mut self.ones, &mut node.ones);
+        array::split(&mut self.lens, &mut node.lens);
+        array::split(&mut self.n_ones, &mut node.n_ones);
 
         self.ptrs[8..].swap_with_slice(&mut node.ptrs[..8]);
-        dbg!(&self, &node);
         node
     }
 
     fn insert(&mut self, rank: usize, ptr: PackedPtr) {
-        // We have space!
         debug_assert!(rank < CAPACITY - 1);
         debug_assert!(self.ptrs[CAPACITY - 1].is_null());
         debug_assert!(!self.ptrs[rank].is_null());
@@ -278,13 +269,13 @@ impl Node {
                 CAPACITY - 1 - rank,
             );
             std::ptr::copy(
-                &self.counts[rank] as *const _,
-                &mut self.counts[rank + 1] as *mut _,
+                &self.lens[rank] as *const _,
+                &mut self.lens[rank + 1] as *mut _,
                 CAPACITY - 1 - rank,
             );
             std::ptr::copy(
-                &self.ones[rank] as *const _,
-                &mut self.ones[rank + 1] as *mut _,
+                &self.n_ones[rank] as *const _,
+                &mut self.n_ones[rank + 1] as *mut _,
                 CAPACITY - 1 - rank,
             );
         }
@@ -292,26 +283,26 @@ impl Node {
     }
 
     fn add_bit_count(&mut self, rank: usize, bit: bool) {
-        array::increment(&mut self.counts, rank);
+        array::increment(&mut self.lens, rank);
         if bit {
-            array::increment(&mut self.ones, rank);
+            array::increment(&mut self.n_ones, rank);
         }
     }
 
     fn is_full(&self) -> bool {
         debug_assert_eq!(
             self.ptrs[15].is_null(),
-            self.counts[15] == self.counts[14]
+            self.lens[15] == self.lens[14]
         );
         !self.ptrs[15].is_null()
     }
 
     fn num_ones(&self) -> u32 {
-        self.ones[15] as u32
+        self.n_ones[15] as u32
     }
 
     fn len(&self) -> usize {
-        self.counts[15] as usize
+        self.lens[15] as usize
     }
 
     fn debug_assert_indices(&self) {
@@ -331,14 +322,14 @@ impl Node {
                 }
             }
 
-            debug_assert_eq!(len, self.counts[i]);
-            debug_assert_eq!(n_ones, self.ones[i]);
+            debug_assert_eq!(len, self.lens[i]);
+            debug_assert_eq!(n_ones, self.n_ones[i]);
         }
     }
 
     #[cfg(test)]
     fn to_vec(&self) -> Vec<bool> {
-        let mut vec = Vec::with_capacity(self.counts[15] as usize);
+        let mut vec = Vec::with_capacity(self.lens[15] as usize);
         for ptr in &self.ptrs {
             match ptr.expand() {
                 Ptr::None => {}
@@ -459,22 +450,22 @@ mod test {
         let mut bits = BitVec::new();
 
         bits.insert(0, true);
-        assert_eq!(bits.root.ones, [1; 16]);
-        assert_eq!(bits.root.counts, [1; 16]);
+        assert_eq!(bits.root.n_ones, [1; 16]);
+        assert_eq!(bits.root.lens, [1; 16]);
         assert_eq!(bits.len(), 1);
         assert_eq!(bits.num_zeros(), 0);
         assert_eq!(bits.num_ones(), 1);
 
         bits.insert(0, false);
-        assert_eq!(bits.root.ones, [1; 16]);
-        assert_eq!(bits.root.counts, [2; 16]);
+        assert_eq!(bits.root.n_ones, [1; 16]);
+        assert_eq!(bits.root.lens, [2; 16]);
         assert_eq!(bits.len(), 2);
         assert_eq!(bits.num_zeros(), 1);
         assert_eq!(bits.num_ones(), 1);
 
         bits.insert(2, true);
-        assert_eq!(bits.root.ones, [2; 16]);
-        assert_eq!(bits.root.counts, [3; 16]);
+        assert_eq!(bits.root.n_ones, [2; 16]);
+        assert_eq!(bits.root.lens, [3; 16]);
         assert_eq!(bits.len(), 3);
         assert_eq!(bits.num_zeros(), 1);
         assert_eq!(bits.num_ones(), 2);
@@ -487,19 +478,19 @@ mod test {
             bits.insert(0, false);
 
             for i in 0..16 {
-                assert!(bits.root.counts[i] <= 256 * i as u32 + 256);
+                assert!(bits.root.lens[i] <= 256 * i as u32 + 256);
             }
         }
 
         let mut len = 0;
         let mut n_ones = 0;
         for i in 0..16 {
-            assert!(bits.root.counts[i] <= 256 * i as u32 + 256);
+            assert!(bits.root.lens[i] <= 256 * i as u32 + 256);
             if let Ptr::Leaf(leaf) = bits.root.ptrs[i].expand() {
                 len += leaf.len();
                 n_ones += leaf.num_ones();
-                assert_eq!(bits.root.counts[i] as usize, len);
-                assert_eq!(bits.root.ones[i], n_ones);
+                assert_eq!(bits.root.lens[i] as usize, len);
+                assert_eq!(bits.root.n_ones[i], n_ones);
             } else {
                 unreachable!();
             }
@@ -513,25 +504,25 @@ mod test {
     }
 
     #[test]
-    fn test_bitvec_single_level_full_ones() {
+    fn test_bitvec_single_level_full_n_ones() {
         let mut bits = BitVec::new();
         for i in 0..(128 + 128 * CAPACITY) {
             bits.insert(i, true);
 
             for j in 0..16 {
-                assert!(bits.root.counts[j] <= 256 * j as u32 + 256);
+                assert!(bits.root.lens[j] <= 256 * j as u32 + 256);
             }
         }
 
         let mut len = 0;
         let mut n_ones = 0;
         for i in 0..16 {
-            assert!(bits.root.counts[i] <= 256 * i as u32 + 256);
+            assert!(bits.root.lens[i] <= 256 * i as u32 + 256);
             if let Ptr::Leaf(leaf) = bits.root.ptrs[i].expand() {
                 len += leaf.len();
                 n_ones += leaf.num_ones();
-                assert_eq!(bits.root.counts[i] as usize, len);
-                assert_eq!(bits.root.ones[i], n_ones);
+                assert_eq!(bits.root.lens[i] as usize, len);
+                assert_eq!(bits.root.n_ones[i], n_ones);
             } else {
                 unreachable!();
             }
@@ -558,7 +549,7 @@ mod test {
             assert_eq!(expected, bits.root.to_vec());
 
             for j in 0..16 {
-                assert!(bits.root.counts[j] <= 256 * j as u32 + 256);
+                assert!(bits.root.lens[j] <= 256 * j as u32 + 256);
             }
         }
         // bits should be a palindrome of 0^k 1^k
@@ -566,12 +557,12 @@ mod test {
         let mut len = 0;
         let mut n_ones = 0;
         for i in 0..16 {
-            assert!(bits.root.counts[i] <= 256 * i as u32 + 256);
+            assert!(bits.root.lens[i] <= 256 * i as u32 + 256);
             if let Ptr::Leaf(leaf) = bits.root.ptrs[i].expand() {
                 len += leaf.len();
                 n_ones += leaf.num_ones();
-                assert_eq!(bits.root.counts[i] as usize, len);
-                assert_eq!(bits.root.ones[i], n_ones);
+                assert_eq!(bits.root.lens[i] as usize, len);
+                assert_eq!(bits.root.n_ones[i], n_ones);
             } else {
                 unreachable!();
             }
@@ -597,8 +588,8 @@ mod test {
     #[test]
     fn test_node_split_1() {
         let mut node = Node {
-            counts: [256; 16],
-            ones: [256; 16],
+            lens: [256; 16],
+            n_ones: [256; 16],
             ptrs: [PackedPtr::null(); CAPACITY],
         };
 
@@ -613,8 +604,8 @@ mod test {
             .collect::<Vec<_>>();
         for i in 0..16 {
             node.ptrs[i] = ptrs[i];
-            node.counts[i] = 256 + i as u32 * 256;
-            node.ones[i] = 256 + i as u32 * 256;
+            node.lens[i] = 256 + i as u32 * 256;
+            node.n_ones[i] = 256 + i as u32 * 256;
         }
 
         let new = node.split();
@@ -622,11 +613,11 @@ mod test {
             256, 512, 768, 1024, 1280, 1536, 1792, 2048, 2048, 2048, 2048,
             2048, 2048, 2048, 2048, 2048,
         ];
-        debug_assert_eq!(new.counts, expected);
-        debug_assert_eq!(node.counts, expected);
+        debug_assert_eq!(new.lens, expected);
+        debug_assert_eq!(node.lens, expected);
 
-        debug_assert_eq!(new.ones, expected);
-        debug_assert_eq!(node.ones, expected);
+        debug_assert_eq!(new.n_ones, expected);
+        debug_assert_eq!(node.n_ones, expected);
 
         let null = PackedPtr::null();
         debug_assert_eq!(
@@ -649,7 +640,7 @@ mod test {
     #[test]
     fn test_bitvec_multilevel_half_zeros() {
         let mut bits = BitVec::new();
-        let mut expected = Vec::with_capacity(128 + 128 * CAPACITY);
+        let mut expected = Vec::with_capacity(4096);
         for i in 0..2048 {
             bits.insert(i, true);
             expected.insert(i, true);
