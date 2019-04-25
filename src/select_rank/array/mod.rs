@@ -13,5 +13,3 @@ mod test;
     target_feature = "sse2"
 ))]
 pub(crate) use simd::*;
-
-

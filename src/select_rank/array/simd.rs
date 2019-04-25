@@ -127,8 +127,6 @@ pub(crate) fn add(values: &mut [u32; 16], mut pos: usize, mag: i32) {
 ///     src[i + 8] -= src[7];
 /// }
 /// ```
-///
-///
 pub(crate) fn split(src: &mut [u32; 16], dest: &mut [u32; 16]) {
     debug_assert!(src.iter().all(|v| *v < i32::max_value() as u32));
     debug_assert!(dest.iter().all(|v| *v < i32::max_value() as u32));

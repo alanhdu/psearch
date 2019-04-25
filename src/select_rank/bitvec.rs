@@ -94,7 +94,9 @@ impl BitVec {
 
         let mut index = index as u32;
 
-        let mut stack: Vec<(*mut Node, usize)> = Vec::new();
+        // leading zeros is approximately log2. Divide by 4 to get log_16
+        let mut stack: Vec<(*mut Node, usize)> =
+            Vec::with_capacity((64 - self.len().leading_zeros() as usize) / 4);
         let mut node: &mut Node = &mut self.root;
 
         loop {
