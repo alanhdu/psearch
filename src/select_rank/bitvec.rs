@@ -33,6 +33,60 @@ impl BitVec {
         self.len() as u32 - self.num_ones()
     }
 
+    fn split(
+        &mut self,
+        stack: Vec<(*mut Node, usize)>,
+        new: Box<Bits256>,
+    ) {
+        let mut ptr = PackedPtr::from(new);
+        for (node, rank) in stack.iter().rev().cloned() {
+            let node = unsafe { &mut *node };
+            if !node.is_full() {
+                node.insert(rank, ptr);
+                node.counts[rank] -= ptr.len() as u32;
+                node.ones[rank] -= ptr.num_ones();
+                node.debug_assert_indices();
+                return;
+            } else {
+                let mut new = Box::new(node.split());
+                if rank >= 8 {
+                    new.insert(rank - 8, ptr);
+                    new.counts[rank - 8] -= ptr.len() as u32;
+                    new.ones[rank - 8] -= ptr.num_ones();
+                } else {
+                    node.insert(rank, ptr);
+                    node.counts[rank] -= ptr.len() as u32;
+                    node.ones[rank] -= ptr.num_ones();
+                }
+
+                new.debug_assert_indices();
+                node.debug_assert_indices();
+                ptr = PackedPtr::from(new);
+            }
+        }
+
+        // We've recursed all the way to the root
+        debug_assert!(!self.root.is_full());
+        debug_assert!(self.root.ptrs[9].is_null());
+
+        let len = self.root.len() + ptr.len();
+        let n_ones = self.root.num_ones() + ptr.num_ones();
+
+        let root = std::mem::replace(
+            &mut self.root,
+            Box::new(Node {
+                counts: [len as u32; 16],
+                ones: [n_ones; 16],
+                ptrs: [PackedPtr::null(); CAPACITY],
+            }),
+        );
+        self.root.counts[0] = root.len() as u32;
+        self.root.ones[0] = root.num_ones() as u32;
+        self.root.ptrs[0] = PackedPtr::from(root);
+        self.root.ptrs[1] = ptr;
+        self.root.debug_assert_indices();
+    }
+
     pub fn insert(&mut self, index: usize, bit: bool) {
         debug_assert!(index <= self.len());
         if index == 0 && self.len() == 0 {
@@ -74,55 +128,8 @@ impl BitVec {
                         } else {
                             leaf.insert_bit(index as usize, bit);
                         }
-
-                        let mut ptr = PackedPtr::from(new);
                         stack.push((node, rank));
-                        for (node, rank) in stack.iter().rev().cloned() {
-                            let node = unsafe { &mut *node };
-                            if !node.is_full() {
-                                node.insert(rank, ptr);
-                                node.counts[rank] -= ptr.len() as u32;
-                                node.ones[rank] -= ptr.num_ones();
-                                node.debug_assert_indices();
-                                return;
-                            } else {
-                                let mut new = Box::new(node.split());
-                                if rank >= 8 {
-                                    new.insert(rank - 8, ptr);
-                                    new.counts[rank - 8] -= ptr.len() as u32;
-                                    new.ones[rank - 8] -= ptr.num_ones();
-                                } else {
-                                    node.insert(rank, ptr);
-                                    node.counts[rank] -= ptr.len() as u32;
-                                    node.ones[rank] -= ptr.num_ones();
-                                }
-
-                                new.debug_assert_indices();
-                                node.debug_assert_indices();
-                                ptr = PackedPtr::from(new);
-                            }
-                        }
-
-                        // We've recursed all the way to the root
-                        debug_assert!(!self.root.is_full());
-                        debug_assert!(self.root.ptrs[9].is_null());
-
-                        let len = self.root.len() + ptr.len();
-                        let n_ones = self.root.num_ones() + ptr.num_ones();
-
-                        let root = std::mem::replace(
-                            &mut self.root,
-                            Box::new(Node {
-                                counts: [len as u32; 16],
-                                ones: [n_ones; 16],
-                                ptrs: [PackedPtr::null(); CAPACITY],
-                            }),
-                        );
-                        self.root.counts[0] = root.len() as u32;
-                        self.root.ones[0] = root.num_ones() as u32;
-                        self.root.ptrs[0] = PackedPtr::from(root);
-                        self.root.ptrs[1] = ptr;
-                        self.root.debug_assert_indices();
+                        self.split(stack, new);
                     } else {
                         leaf.insert_bit(index as usize, bit);
                     }
