@@ -1,26 +1,10 @@
-const SIZE: u32 = 64;
+use super::{
+    u64::{pdep, pext},
+    SelectRank,
+};
+
 const INCREMENT: [u32; 4] =
     [0x01_01_01_00, 0x01_01_00_00, 0x01_00_00_00, 0x00_00_00_00];
-
-/// parallel deposit
-fn pdep(src: u64, mask: u64) -> u64 {
-    #[cfg(target_arch = "x86")]
-    use std::arch::x86::_pdep_u64;
-    #[cfg(target_arch = "x86_64")]
-    use std::arch::x86_64::_pdep_u64;
-
-    unsafe { _pdep_u64(src, mask) }
-}
-
-/// parallel extract
-fn pext(src: u64, mask: u64) -> u64 {
-    #[cfg(target_arch = "x86")]
-    use std::arch::x86::_pext_u64;
-    #[cfg(target_arch = "x86_64")]
-    use std::arch::x86_64::_pext_u64;
-
-    unsafe { _pext_u64(src, mask) }
-}
 
 /// A bitstring holding up to 256 bits
 ///
@@ -103,8 +87,6 @@ impl Bits256 {
         }
     }
 
-    /// Append a bit at the end
-
     /// Remove a bit at our index
     pub fn remove_bit(&mut self, index: usize) -> bool {
         debug_assert!(index < self.len as usize);
@@ -184,71 +166,6 @@ impl Bits256 {
         new
     }
 
-    /// Return the number of 0s before the `i`th position
-    pub fn rank0(&self, index: u32) -> u32 {
-        debug_assert!(index < self.len);
-        index - self.rank1(index)
-    }
-
-    /// Return the number of 1s before the `i`th position
-    pub fn rank1(&self, index: u32) -> u32 {
-        debug_assert!(index < self.len);
-        let upper = usize::from((index as u8) >> 6);
-        let lower = (index as u8) & 0b0011_1111;
-
-        let bits = if lower == 0 {
-            0
-        } else {
-            (self.bits[upper] << (SIZE - u32::from(lower))).count_ones()
-        };
-        bits + u32::from(self.n_ones[upper])
-    }
-
-    /// Return the position of the `i`th 0 (0-indexed)
-    pub fn select0(&self, index: u32) -> u32 {
-        debug_assert!(index < 256);
-        debug_assert!(index < self.len);
-        let index = index as u8;
-
-        let i = if index < 2 * 64 - self.n_ones[2] {
-            if index < 64 - self.n_ones[1] {
-                0
-            } else {
-                1
-            }
-        } else if index < 3 * 64 - self.n_ones[3] {
-            2
-        } else {
-            3
-        };
-
-        let index = index - ((i as u8) * 64 - self.n_ones[i]);
-
-        (i as u32) * 64 + pdep(1 << index, !self.bits[i]).trailing_zeros()
-    }
-
-    /// Return the position of the `i`th 1 (0-indexed)
-    pub fn select1(&self, index: u32) -> u32 {
-        debug_assert!(index < 256);
-        debug_assert!(index < self.len);
-        let index = index as u8;
-
-        let i = if index < self.n_ones[2] {
-            if index < self.n_ones[1] {
-                0
-            } else {
-                1
-            }
-        } else if index < self.n_ones[3] {
-            2
-        } else {
-            3
-        };
-
-        let index = index - self.n_ones[i];
-        (i as u32) * 64 + pdep(1 << index, self.bits[i]).trailing_zeros()
-    }
-
     #[cfg(test)]
     pub(crate) fn to_vec(&self) -> Vec<bool> {
         let mut v = Vec::with_capacity(self.len as usize);
@@ -260,6 +177,71 @@ impl Bits256 {
             v.push(self.bits[upper] & (1 << lower) != 0);
         }
         v
+    }
+}
+
+impl SelectRank for Bits256 {
+    fn get_bit(&self, index: usize) -> bool {
+        assert!(index < 256);
+        let upper = usize::from((index as u8) >> 6);
+        let lower = (index as u8) & 0b0011_1111;
+
+        self.bits[upper] & (1 << lower) != 0
+    }
+
+    /// Return the number of 0s before the `i`th position
+    fn rank0(&self, index: usize) -> usize {
+        index - self.rank1(index)
+    }
+
+    /// Return the number of 1s before the `i`th position
+    fn rank1(&self, index: usize) -> usize {
+        let upper = usize::from((index as u8) >> 6);
+        let lower = (index as u8) & 0b0011_1111;
+
+        let bits = if lower == 0 {
+            0
+        } else {
+            self.bits[upper].rank1(lower as usize)
+        };
+        bits + usize::from(self.n_ones[upper])
+    }
+
+    /// Return the position of the `i`th 0 (0-indexed)
+    fn select0(&self, index: usize) -> usize {
+        assert!(index < self.len as usize);
+
+        let n_zeros = |i| i * 64 - self.n_ones[i] as usize;
+
+        // Equivalent to:
+        // if index < 2 * 64 - self.n_ones[2] {
+        //     if index < 64 - self.n_ones[1] { 0 } else { 1 }
+        // } else {
+        //     if index < 3 * 64 - self.n_ones[3] { 2 } else { 3 }
+        // }
+        let mut i = 2 * (index >= n_zeros(2)) as usize;
+        i += (index >= n_zeros(i + 1)) as usize;
+
+        let index = index - n_zeros(i);
+        i * 64 + self.bits[i].select0(index)
+    }
+
+    /// Return the position of the `i`th 1 (0-indexed)
+    fn select1(&self, index: usize) -> usize {
+        assert!(index < self.len as usize);
+
+        // Equivalent to:
+        //  let i = if index < self.n_ones[2] as usize {
+        //      if index < self.n_ones[1] as usize { 0 } else { 1 }
+        //  } else {
+        //      if index < self.n_ones[3] as usize { 2 } else { 3 }
+        //  };
+        let mut i = 2 * (index >= self.n_ones[2] as usize) as usize;
+        i += (index >= self.n_ones[i + 1] as usize) as usize;
+
+        dbg!(index, i, self.n_ones);
+        let index = index - self.n_ones[i as usize] as usize;
+        64 * i as usize + self.bits[i].select1(index)
     }
 }
 
@@ -558,20 +540,20 @@ mod test {
             );
 
             for i in 0..bits256.num_ones() {
-                prop_assert!(bits[bits256.select1(i) as usize]);
+                prop_assert!(bits[bits256.select1(i as usize)]);
             }
             for i in 0..bits256.num_zeros() {
-                prop_assert!(!bits[bits256.select0(i) as usize]);
+                prop_assert!(!bits[bits256.select0(i as usize)]);
             }
 
             let mut c0 = 0;
             let mut c1 = 0;
             for (i, bit) in bits.iter().cloned().enumerate() {
-                prop_assert_eq!(bits256.rank0(i as u32), c0);
-                prop_assert_eq!(bits256.rank1(i as u32), c1);
+                prop_assert_eq!(bits256.rank0(i), c0);
+                prop_assert_eq!(bits256.rank1(i), c1);
 
-                c0 += !bit as u32;
-                c1 += bit as u32;
+                c0 += !bit as usize;
+                c1 += bit as usize;
             }
         }
 

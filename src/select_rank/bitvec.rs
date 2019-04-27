@@ -1,9 +1,6 @@
-#![allow(dead_code)]
+use super::{Bits256, SelectRank};
 use crate::array::u32x16;
-use super::Bits256;
 
-const B: usize = 8;
-const MIN_SIZE: usize = B - 1;
 const CAPACITY: usize = 16;
 
 pub struct BitVec {
@@ -136,10 +133,20 @@ impl BitVec {
             }
         }
     }
+}
+
+impl SelectRank for BitVec {
+    fn get_bit(&self, index: usize) -> bool {
+        unimplemented!();
+    }
 
     /// Return the position of the `i`th 0 (0-indexed)
-    pub fn select0(&self, mut index: u32) -> u32 {
-        debug_assert!(index < self.root.lens[15] - self.root.n_ones[15]);
+    fn select0(&self, index: usize) -> usize {
+        debug_assert!(
+            index < (self.root.lens[15] - self.root.n_ones[15]) as usize
+        );
+
+        let mut index = index as u32;
 
         let mut node: &Node = &self.root;
         let mut count = 0;
@@ -158,22 +165,22 @@ impl BitVec {
                     node = inner;
                 }
                 Ptr::Leaf(leaf) => {
-                    return count + leaf.select0(index);
+                    return count as usize + leaf.select0(index as usize);
                 }
             }
         }
     }
     /// Return the position of the `i`th 1 (0-indexed)
-    pub fn select1(&self, mut index: u32) -> u32 {
-        debug_assert!(index < self.root.n_ones[15]);
+    fn select1(&self, mut index: usize) -> usize {
+        debug_assert!(index < self.root.n_ones[15] as usize);
         let mut node: &Node = &self.root;
         let mut count = 0;
 
         loop {
-            let rank = u32x16::rank(&node.n_ones, index + 1) as usize;
+            let rank = u32x16::rank(&node.n_ones, 1 + index as u32) as usize;
             if rank > 0 {
                 count += node.lens[rank - 1];
-                index -= node.n_ones[rank - 1];
+                index -= node.n_ones[rank - 1] as usize;
             }
 
             match node.ptrs[rank].expand() {
@@ -182,20 +189,21 @@ impl BitVec {
                     node = inner;
                 }
                 Ptr::Leaf(leaf) => {
-                    return count + leaf.select1(index);
+                    return count as usize + leaf.select1(index);
                 }
             }
         }
     }
 
     /// Return the number of 0s before the `i`th position
-    pub fn rank0(&self, index: u32) -> u32 {
+    fn rank0(&self, index: usize) -> usize {
         index - self.rank1(index)
     }
 
     /// Return the number of 1s before the `i`th position
-    pub fn rank1(&self, mut index: u32) -> u32 {
-        debug_assert!((index as usize) < self.len());
+    fn rank1(&self, index: usize) -> usize {
+        debug_assert!(index < self.len());
+        let mut index = index as u32;
 
         let mut node: &Node = &self.root;
         let mut count = 0;
@@ -212,7 +220,7 @@ impl BitVec {
                     node = inner;
                 }
                 Ptr::Leaf(leaf) => {
-                    return count + leaf.rank1(index);
+                    return count as usize + leaf.rank1(index as usize);
                 }
             }
         }
@@ -371,24 +379,6 @@ impl PackedPtr {
         self.0 == 0
     }
 
-    fn is_full(self) -> bool {
-        match self.expand() {
-            Ptr::None => false,
-            Ptr::Leaf(leaf) => leaf.is_full(),
-            Ptr::Inner(node) => !node.ptrs[15].is_null(),
-        }
-    }
-
-    fn split(&mut self) -> PackedPtr {
-        debug_assert!(self.is_full());
-
-        match self.expand_mut() {
-            PtrMut::None => unreachable!(),
-            PtrMut::Leaf(leaf) => PackedPtr::from(Box::new(leaf.split())),
-            PtrMut::Inner(inner) => PackedPtr::from(Box::new(inner.split())),
-        }
-    }
-
     fn num_ones(self) -> u32 {
         debug_assert!(!self.is_null());
         match self.expand() {
@@ -499,7 +489,7 @@ mod test {
             }
         }
 
-        for i in 0..(128 + 128 * CAPACITY as u32) {
+        for i in 0..(128 + 128 * CAPACITY) {
             assert_eq!(bits.rank0(i), i);
             assert_eq!(bits.rank1(i), 0);
             assert_eq!(bits.select0(i), i);
@@ -531,7 +521,7 @@ mod test {
             }
         }
 
-        for i in 0..(128 + 128 * CAPACITY as u32) {
+        for i in 0..(128 + 128 * CAPACITY) {
             assert_eq!(bits.rank0(i), 0);
             assert_eq!(bits.rank1(i), i);
             assert_eq!(bits.select1(i), i);
@@ -571,7 +561,7 @@ mod test {
             }
         }
 
-        let len = 64 + 64 * CAPACITY as u32;
+        let len = 64 + 64 * CAPACITY;
         for i in 0..(2 * len) {
             if i < len {
                 assert_eq!(bits.rank0(i), i);
@@ -692,20 +682,20 @@ mod test {
             let mut n_ones = 0;
             let mut n_zeros = 0;
             for (i, bit) in expected.iter().cloned().enumerate() {
-                prop_assert_eq!(bits.rank0(i as u32), n_zeros);
-                prop_assert_eq!(bits.rank1(i as u32), n_ones);
+                prop_assert_eq!(bits.rank0(i), n_zeros);
+                prop_assert_eq!(bits.rank1(i), n_ones);
 
-                n_zeros += !bit as u32;
-                n_ones += bit as u32;
+                n_zeros += !bit as usize;
+                n_ones += bit as usize;
             }
-            prop_assert_eq!(n_zeros, bits.len() as u32 - bits.num_ones());
-            prop_assert_eq!(n_ones, bits.num_ones());
+            prop_assert_eq!(n_zeros, bits.len() - bits.num_ones() as usize);
+            prop_assert_eq!(n_ones, bits.num_ones() as usize);
 
             for i in 0..n_zeros {
-                prop_assert_eq!(expected[bits.select0(i) as usize], false);
+                prop_assert_eq!(expected[bits.select0(i)], false);
             }
             for i in 0..n_ones {
-                prop_assert_eq!(expected[bits.select1(i) as usize], true);
+                prop_assert_eq!(expected[bits.select1(i)], true);
             }
         }
     }
