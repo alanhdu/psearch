@@ -27,7 +27,6 @@ impl u9x7 {
     }
 
     pub(crate) fn rank(self, needle: usize) -> usize {
-        debug_assert!(needle <= 512);
         if needle >= 512 {
             return 7;
         }
@@ -55,6 +54,11 @@ impl u9x7 {
         let lt = ((((x | H) - (y & !H)) | (x ^ y)) ^ (x | !y)) & H;
 
         lt.count_ones() as usize
+    }
+
+    pub(crate) fn rank_zero(self, needle: usize) -> usize {
+        let diff = u9x7::new([64, 128, 192, 256, 320, 384, 448]).0 - self.0;
+        u9x7(diff).rank(needle)
     }
 }
 

@@ -69,30 +69,49 @@ impl SelectRank for SBitVec {
 
     /// Return the position of the `i`th 1 (0-indexed)
     fn select0(&self, mut index: usize) -> usize {
-        let index3_rank = binary_search_rank(index, self.index3.len(), |mid| {
-            (1 + mid) * (512 * 33) - self.index3[mid] as usize
-        });
-        index -= index3_rank;
+        let index2_rank =
+            binary_search_rank(index + 1, self.index3.len(), |mid| {
+                (1 + mid) * (512 * 33) - self.index3[mid] as usize
+            });
+        index -= if index2_rank == 0 {
+            0
+        } else {
+            512 * 33 * index2_rank - self.index3[index2_rank - 1] as usize
+        };
 
-        let index2_rank = u16x32::rank_diff(
+        let index2 = &self.index2[index2_rank];
+        let index1_rank = u16x32::rank_diff(
             &[
                 512, 1024, 1536, 2048, 2560, 3072, 3584, 4096, 4608, 5120,
                 5632, 6144, 6656, 7168, 7680, 8192, 8704, 9216, 9728, 10240,
                 10752, 11264, 11776, 12288, 12800, 13312, 13824, 14336, 14848,
                 15360, 15872, 16384,
             ],
-            &self.index2[index3_rank],
-            index as u16,
+            index2,
+            1 + index as u16,
         );
-        index -= index2_rank;
+        index -= if index1_rank == 0 {
+            0
+        } else {
+            512 * index1_rank - index2[index1_rank - 1] as usize
+        };
 
-        let index1_rank = self.index1[index].rank_zero(index);
-        index -= index1_rank;
+        let index1 = &self.index1[index2_rank * 33 + index1_rank];
+        let block_rank = index1.rank_zero(index + 1);
+        index -= if block_rank == 0 {
+            0
+        } else {
+            64 * block_rank - index1.get(block_rank - 1) as usize
+        };
 
-        self.blocks[index1_rank].select0(index)
-            + index1_rank * 64
-            + index2_rank * 512
-            + index3_rank * (512 * 33)
+        let block =
+            self.blocks[block_rank + index1_rank * 8 + index2_rank * 8 * 33];
+        let bit_rank = block.select0(index);
+
+        bit_rank
+            + block_rank * 64
+            + index1_rank * 512
+            + index2_rank * (512 * 33)
     }
     /// Return the position of the `i`th 1 (0-indexed)
     fn select1(&self, mut index: usize) -> usize {
@@ -107,7 +126,7 @@ impl SelectRank for SBitVec {
         };
 
         let index2 = &self.index2[index2_rank];
-        let index1_rank = u16x32::rank(index2, (1 + index) as u16);
+        let index1_rank = u16x32::rank(index2, 1 + index as u16);
         index -= if index1_rank == 0 {
             0
         } else {
@@ -356,21 +375,40 @@ mod test {
     #[test]
     fn test_sbitvec_select_rank_blocks() {
         let bits = SBitVec::from_iter(
-            vec![false; 10000].into_iter().chain(vec![true; 10000]),
+            vec![false; 20000].into_iter().chain(vec![true; 20000]),
         );
 
-        for i in 0..10000 {
+        for i in 0..20000 {
             assert_eq!(bits.rank0(i), i);
             assert_eq!(bits.rank1(i), 0);
         }
-        for i in 10000..20000 {
-            assert_eq!(bits.rank0(i), 10000);
-            assert_eq!(bits.rank1(i), i - 10000);
+        for i in 20000..40000 {
+            assert_eq!(bits.rank0(i), 20000);
+            assert_eq!(bits.rank1(i), i - 20000);
         }
 
-        for i in 0..10000 {
-            // assert_eq!(bits.select0(i), i);
-            assert_eq!(bits.select1(i), 10000 + i);
+        for i in 0..20000 {
+            assert_eq!(bits.select0(i), i);
+            assert_eq!(bits.select1(i), 20000 + i);
+        }
+    }
+
+    #[test]
+    fn test_sbitvec_select_rank_alternating() {
+        let mut bits = vec![true; 40000];
+        for i in 0..20000 {
+            bits[i * 2] = false;
+        }
+        let bits = SBitVec::from_iter(bits);
+
+        for i in 0..40000 {
+            assert_eq!(bits.rank0(i), (i + 1) / 2);
+            assert_eq!(bits.rank1(i), i  / 2);
+        }
+
+        for i in 0..20000 {
+            assert_eq!(bits.select0(i), 2 * i);
+            assert_eq!(bits.select1(i), 2 * i + 1);
         }
     }
 }

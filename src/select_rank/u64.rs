@@ -68,4 +68,15 @@ mod test {
             assert_eq!(b.select1(i), 32 + i);
         }
     }
+
+    #[test]
+    fn test_u64_ones() {
+        let b = u64::max_value();
+        for i in 0..64 {
+            assert_eq!(b.rank0(i), 0);
+            assert_eq!(b.rank1(i), i);
+
+            assert_eq!(b.select1(i), i);
+        }
+    }
 }

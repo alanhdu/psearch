@@ -15,6 +15,15 @@ fn test_rank() {
 }
 
 #[test]
+fn test_rank_eq() {
+    let haystack: [u32; 16] = [
+        10, 10, 10, 10, 10, 10, 10, 10, 20, 20, 20, 20, 20, 20, 20, 20];
+
+    assert_eq!(u32x16::rank(&haystack, 10), 0);
+    assert_eq!(u32x16::rank(&haystack, 20), 8);
+}
+
+#[test]
 fn test_rank_diff() {
     let big: [u32; 16] = [
         0, 2, 4, 6, 10, 16, 26, 42, 68, 110, 178, 288, 466, 754, 1220, 1974,

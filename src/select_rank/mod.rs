@@ -1,9 +1,11 @@
 mod bits256;
 mod bitvec;
+mod sbitvec;
 mod u64;
 
 pub use bits256::Bits256;
 pub use bitvec::BitVec;
+pub use sbitvec::SBitVec;
 
 pub trait SelectRank {
     /// Return the ith bit
