@@ -4,9 +4,9 @@ pub(crate) struct u8x3(u32);
 
 impl u8x3 {
     pub(crate) fn new(data: [u8; 3]) -> u8x3 {
-        let a = data[0] as u32;
-        let b = data[1] as u32;
-        let c = data[2] as u32;
+        let a = u32::from(data[0]);
+        let b = u32::from(data[1]);
+        let c = u32::from(data[2]);
 
         // Layout is:
         // 0000 cccc cccc 00bb bbbb bb00 aaaa aaaa

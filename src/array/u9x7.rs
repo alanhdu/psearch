@@ -1,6 +1,8 @@
 #![allow(dead_code)]
+use std::fmt;
 
 #[allow(non_camel_case_types)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub(crate) struct u9x7(u64);
 
 impl u9x7 {
@@ -8,25 +10,23 @@ impl u9x7 {
         // data must fit into 9 bits
         debug_assert!(data.iter().all(|x| *x < 512));
 
-        let a = data[0] as u64;
-        let b = data[1] as u64;
-        let c = data[2] as u64;
-        let d = data[3] as u64;
-        let e = data[4] as u64;
-        let f = data[5] as u64;
-        let g = data[6] as u64;
-
         u9x7(
-            a | (b << 9)
-                | (c << 18)
-                | (d << 27)
-                | (e << 36)
-                | (f << 45)
-                | (g << 54),
+            u64::from(data[0])
+                | (u64::from(data[1]) << 9)
+                | (u64::from(data[2]) << 18)
+                | (u64::from(data[3]) << 27)
+                | (u64::from(data[4]) << 36)
+                | (u64::from(data[5]) << 45)
+                | (u64::from(data[6]) << 54),
         )
     }
 
-    pub(crate) fn rank(&self, needle: usize) -> usize {
+    pub(crate) fn get(self, index: usize) -> u16 {
+        debug_assert!(index < 8);
+        ((self.0 >> (index * 9)) & 0b1_1111_1111) as u16
+    }
+
+    pub(crate) fn rank(self, needle: usize) -> usize {
         debug_assert!(needle <= 512);
         if needle >= 512 {
             return 7;
@@ -55,6 +55,21 @@ impl u9x7 {
         let lt = ((((x | H) - (y & !H)) | (x ^ y)) ^ (x | !y)) & H;
 
         lt.count_ones() as usize
+    }
+}
+
+impl fmt::Debug for u9x7 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let values = [
+            self.0 & 0b1_1111_1111,
+            (self.0 >> 9) & 0b1_1111_1111,
+            (self.0 >> 18) & 0b1_1111_1111,
+            (self.0 >> 27) & 0b1_1111_1111,
+            (self.0 >> 36) & 0b1_1111_1111,
+            (self.0 >> 45) & 0b1_1111_1111,
+            (self.0 >> 54) & 0b1_1111_1111,
+        ];
+        f.debug_tuple("u9x7").field(&values).finish()
     }
 }
 
