@@ -4,6 +4,8 @@
 ))]
 mod simd;
 
+pub(crate) mod u8x3;
+
 #[cfg(all(
     any(target_arch = "x86", target_arch = "x86_64"),
     target_feature = "sse"
