@@ -30,6 +30,17 @@ impl SBitVec {
     pub fn len(&self) -> usize {
         self.len
     }
+
+    #[cfg(test)]
+    pub(crate) fn to_vec(&self) -> Vec<bool> {
+        (0..self.len())
+            .map(|i| {
+                let block_index = i / 64;
+                let bit_index = i % 64;
+                self.blocks[block_index] & (1 << bit_index) != 0
+            })
+            .collect::<Vec<_>>()
+    }
 }
 
 impl SelectRank for SBitVec {
@@ -403,7 +414,7 @@ mod test {
 
         for i in 0..40000 {
             assert_eq!(bits.rank0(i), (i + 1) / 2);
-            assert_eq!(bits.rank1(i), i  / 2);
+            assert_eq!(bits.rank1(i), i / 2);
         }
 
         for i in 0..20000 {
