@@ -44,7 +44,8 @@ pub(crate) fn rank_diff(
         let cmp1 =
             _mm256_cmpeq_epi16(_mm256_min_epu16(haystack1, needle), needle);
 
-        let haystack2 = _mm256_sub_epi16(loadu(&big[16..]), loadu(&small[16..]));
+        let haystack2 =
+            _mm256_sub_epi16(loadu(&big[16..]), loadu(&small[16..]));
         let cmp2 =
             _mm256_cmpeq_epi16(_mm256_min_epu16(haystack2, needle), needle);
 

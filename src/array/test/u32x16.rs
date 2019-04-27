@@ -17,7 +17,8 @@ fn test_rank() {
 #[test]
 fn test_rank_eq() {
     let haystack: [u32; 16] = [
-        10, 10, 10, 10, 10, 10, 10, 10, 20, 20, 20, 20, 20, 20, 20, 20];
+        10, 10, 10, 10, 10, 10, 10, 10, 20, 20, 20, 20, 20, 20, 20, 20,
+    ];
 
     assert_eq!(u32x16::rank(&haystack, 10), 0);
     assert_eq!(u32x16::rank(&haystack, 20), 8);
