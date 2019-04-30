@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::iter::FromIterator;
 
 use criterion::black_box;
-use psearch::succinct::SLouds;
+use psearch::succinct::SloudsTrie;
 use rand::{Rng, SeedableRng};
 
 fn main() {
@@ -12,7 +12,7 @@ fn main() {
         (0..100_000).map(|_| (rng.gen::<[u8; 8]>(), rng.gen::<u64>())),
     );
 
-    let slouds = SLouds::from_iter(btree);
+    let slouds = SloudsTrie::from_iter(btree);
 
     let needle = 0xdeadbeefu64.to_be_bytes();
     for _ in 0..100_000_000 {

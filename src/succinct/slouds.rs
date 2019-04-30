@@ -4,7 +4,7 @@ use std::iter::FromIterator;
 use crate::select_rank::{SBitVec, SelectRank};
 
 /// A Static LOUDS trie
-pub struct SLouds<T> {
+pub struct SloudsTrie<T> {
     trie: SBitVec,
     has_value: SBitVec,
     bytes: Vec<u8>,
@@ -26,7 +26,7 @@ impl Cursor {
     }
 }
 
-impl<T> SLouds<T> {
+impl<T> SloudsTrie<T> {
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> Option<&T> {
         let mut cursor = Cursor {
             bit_pos: 0,
@@ -77,7 +77,7 @@ impl<T> SLouds<T> {
     }
 }
 
-/// A really bad trie implementation to construct the SLouds trie
+/// A really bad trie implementation to construct the SloudsTrie trie
 struct BadTrie<T> {
     children: BTreeMap<u8, BadTrie<T>>,
     value: Option<T>,
@@ -118,7 +118,7 @@ impl<T> BadTrie<T> {
     }
 }
 
-impl<T, K> FromIterator<(K, T)> for SLouds<T>
+impl<T, K> FromIterator<(K, T)> for SloudsTrie<T>
 where
     K: AsRef<[u8]>,
 {
@@ -156,7 +156,7 @@ where
             queue.extend(current.children.values_mut());
         }
 
-        SLouds {
+        SloudsTrie {
             trie: SBitVec::from_iter(louds),
             has_value: SBitVec::from_iter(has_value),
             bytes,
@@ -184,7 +184,7 @@ mod test {
         // 4       e   f   g  h i   j k
         //        /|\         |    / \
         // 11    l m n        o   p   q
-        let slouds = SLouds::from_iter(keys.iter().map(|k| (k, ())));
+        let slouds = SloudsTrie::from_iter(keys.iter().map(|k| (k, ())));
 
         assert_eq!(
             slouds.trie.to_vec(),
@@ -239,7 +239,7 @@ mod test {
             b"bel", b"bem", b"ben", b"bf", b"cg", b"dho", b"di", b"djp",
             b"djq", b"dk", b"b",
         ];
-        let slouds = SLouds::from_iter(keys.iter().map(|k| (k, k[0])));
+        let slouds = SloudsTrie::from_iter(keys.iter().map(|k| (k, k[0])));
 
         assert_eq!(slouds.degree(root.bit_pos), 3);
 
@@ -315,7 +315,7 @@ mod test {
             b"djq", b"dk", b"b",
         ];
 
-        let slouds = SLouds::from_iter(keys.iter().map(|k| (k, k[0])));
+        let slouds = SloudsTrie::from_iter(keys.iter().map(|k| (k, k[0])));
 
         for key in keys.iter() {
             assert_eq!(slouds.get(key), Some(&key[0]));
@@ -335,7 +335,7 @@ mod test {
         ];
 
         let slouds =
-            SLouds::from_iter(numbers.iter().map(|k| (k.to_be_bytes(), k)));
+            SloudsTrie::from_iter(numbers.iter().map(|k| (k.to_be_bytes(), k)));
 
         for k in numbers.iter() {
             assert_eq!(slouds.get(k.to_be_bytes()), Some(&k));

@@ -8,7 +8,7 @@ use criterion::{
 };
 use rand::{Rng, SeedableRng};
 
-use psearch::succinct::SLouds;
+use psearch::succinct::SloudsTrie;
 
 fn criterion_benchmark(c: &mut Criterion) {
     let mut rng = rand::rngs::SmallRng::from_seed([5; 16]);
@@ -24,9 +24,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench(
         "get_8_bytes",
         ParameterizedBenchmark::new(
-            "SLouds",
+            "SloudsTrie",
             move |b, &i| {
-                let slouds = SLouds::from_iter(btree1.iter().take(i));
+                let slouds = SloudsTrie::from_iter(btree1.iter().take(i));
                 let mut rng = rand::rngs::SmallRng::from_seed([7; 16]);
                 b.iter(|| {
                     let needle = rng.gen::<[u8; 8]>();

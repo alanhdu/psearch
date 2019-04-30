@@ -1,3 +1,3 @@
 mod slouds;
 
-pub use slouds::SLouds;
+pub use slouds::SloudsTrie;
