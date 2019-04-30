@@ -1,3 +1,4 @@
+use std::iter::FromIterator;
 use super::{Bits256, SelectRank};
 use crate::array::u32x16;
 
@@ -16,6 +17,10 @@ impl BitVec {
                 ptrs: [PackedPtr::null(); CAPACITY],
             }),
         }
+    }
+
+    pub fn total_size(&self) -> usize {
+        std::mem::size_of::<Self>() + self.root.total_size()
     }
 
     pub fn len(&self) -> usize {
@@ -132,6 +137,16 @@ impl BitVec {
                 }
             }
         }
+    }
+}
+
+impl FromIterator<bool> for BitVec {
+    fn from_iter<T>(input: T) -> Self where T: IntoIterator<Item=bool> {
+        let mut bits = BitVec::new();
+        for bit in input.into_iter() {
+            bits.insert(bits.len(), bit);
+        }
+        bits
     }
 }
 
@@ -272,6 +287,19 @@ impl Drop for Node {
 }
 
 impl Node {
+    fn total_size(&self) -> usize {
+        let mut size = std::mem::size_of::<Self>();
+        for ptr in self.ptrs.iter() {
+            match ptr.expand() {
+                Ptr::None => break,
+                Ptr::Leaf(leaf) => size += std::mem::size_of_val(leaf),
+                Ptr::Inner(inner) => size += inner.total_size(),
+            }
+        }
+
+        size
+    }
+
     fn split(&mut self) -> Node {
         debug_assert!(!self.ptrs[15].is_null());
         debug_assert!(self.lens[15] > self.lens[14]);
@@ -458,6 +486,27 @@ impl From<Box<Bits256>> for PackedPtr {
 mod test {
     use super::*;
     use proptest::prelude::*;
+
+    #[test]
+    fn test_bitvec_total_size() {
+        // In the worst case (assuming that all nodes in our tree are at
+        // the minimum size), we have:
+        //  - Bits256: 320 bits / 128                 = 2.5 n
+        //  - Tree: \sum 1/8^k * 2048 bits / 8 blocks
+        //      = 8/7 * 2048 / (8 * 128)
+        //      = 2.28
+        // which should be about 4.78x bits to store.
+
+        let bits = BitVec::from_iter(vec![true; 80]);
+        // 304 bytes to store 10 bytes of data
+        //  = 30.4 x overhead
+        assert_eq!(bits.total_size(), 304);
+
+        let bits = BitVec::from_iter(vec![false; 80000]);
+        // 47240 bytes to store 10000 bytes of data
+        //  = 4.72x overhead
+        assert_eq!(bits.total_size(), 47240);
+    }
 
     #[test]
     fn test_bitvec_insert_bit() {
