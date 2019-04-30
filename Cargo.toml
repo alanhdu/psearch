@@ -16,5 +16,9 @@ proptest = "0.9"
 name = "xfast_set"
 harness = false
 
+[[bench]]
+name = "slouds"
+harness = false
+
 [profile.release]
 debug = true
