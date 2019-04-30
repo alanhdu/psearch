@@ -136,8 +136,27 @@ impl BitVec {
 }
 
 impl SelectRank for BitVec {
-    fn get_bit(&self, index: usize) -> bool {
-        unimplemented!();
+    fn get_bit(&self, mut index: usize) -> bool {
+        debug_assert!(index < self.root.lens[15] as usize);
+        let mut node: &Node = &self.root;
+
+        loop {
+            // Add one because we are 0-indexed
+            let rank = u32x16::rank(&node.lens, 1 + index as u32) as usize;
+            if rank > 0 {
+                index -= node.lens[rank - 1] as usize;
+            }
+
+            match node.ptrs[rank].expand() {
+                Ptr::None => unreachable!(),
+                Ptr::Inner(inner) => {
+                    node = inner;
+                }
+                Ptr::Leaf(leaf) => {
+                    return leaf.get_bit(index);
+                }
+            }
+        }
     }
 
     /// Return the position of the `i`th 0 (0-indexed)
@@ -177,6 +196,7 @@ impl SelectRank for BitVec {
         let mut count = 0;
 
         loop {
+            // Add one because we are 0-indexed
             let rank = u32x16::rank(&node.n_ones, 1 + index as u32) as usize;
             if rank > 0 {
                 count += node.lens[rank - 1];
@@ -208,6 +228,7 @@ impl SelectRank for BitVec {
         let mut node: &Node = &self.root;
         let mut count = 0;
         loop {
+            // Add one because we are 0-indexed
             let rank = u32x16::rank(&node.lens, index + 1) as usize;
             if rank > 0 {
                 count += node.n_ones[rank - 1];
@@ -649,13 +670,14 @@ mod test {
 
         for i in 0..2400 {
             assert_eq!(bits.rank0(i), i);
-            assert_eq!(bits.rank1(i), 0)
+            assert_eq!(bits.rank1(i), 0);
+            assert_eq!(bits.get_bit(i), expected[i]);
         }
         for i in 2400..4800 {
             assert_eq!(bits.rank0(i), 2400);
             assert_eq!(bits.rank1(i), i - 2400);
+            assert_eq!(bits.get_bit(i), expected[i]);
         }
-
         for i in 0..2400 {
             assert_eq!(bits.select0(i), i);
             assert_eq!(bits.select1(i), 2400 + i);
@@ -684,6 +706,8 @@ mod test {
             for (i, bit) in expected.iter().cloned().enumerate() {
                 prop_assert_eq!(bits.rank0(i), n_zeros);
                 prop_assert_eq!(bits.rank1(i), n_ones);
+
+                prop_assert_eq!(bits.get_bit(i), bit);
 
                 n_zeros += !bit as usize;
                 n_ones += bit as usize;

@@ -171,8 +171,8 @@ impl Bits256 {
         let mut v = Vec::with_capacity(self.len as usize);
 
         for i in 0..self.len {
-            let upper = (i >> 6) as usize;
-            let lower = i & 0b0011_1111;
+            let upper = i as usize / 64;
+            let lower = i % 64;
 
             v.push(self.bits[upper] & (1 << lower) != 0);
         }
@@ -183,8 +183,8 @@ impl Bits256 {
 impl SelectRank for Bits256 {
     fn get_bit(&self, index: usize) -> bool {
         assert!(index < 256);
-        let upper = usize::from((index as u8) >> 6);
-        let lower = (index as u8) & 0b0011_1111;
+        let upper = usize::from((index as u8) / 64);
+        let lower = (index as u8) % 64;
 
         self.bits[upper] & (1 << lower) != 0
     }
