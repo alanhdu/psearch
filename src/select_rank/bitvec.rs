@@ -1,6 +1,7 @@
-use std::iter::FromIterator;
 use super::{Bits256, SelectRank};
 use crate::array::u32x16;
+use crate::tree::{PackedPtr, Ptr, PtrMut};
+use std::iter::FromIterator;
 
 const CAPACITY: usize = 16;
 
@@ -36,7 +37,7 @@ impl BitVec {
     }
 
     fn split(&mut self, stack: Vec<(*mut Node, usize)>, new: Box<Bits256>) {
-        let mut ptr = PackedPtr::from(new);
+        let mut ptr = PackedPtr::from_leaf(new);
         for (node, rank) in stack.iter().rev().cloned() {
             let node = unsafe { &mut *node };
             if !node.is_full() {
@@ -59,7 +60,7 @@ impl BitVec {
 
                 new.debug_assert_indices();
                 node.debug_assert_indices();
-                ptr = PackedPtr::from(new);
+                ptr = PackedPtr::from_inner(new);
             }
         }
 
@@ -80,7 +81,7 @@ impl BitVec {
         );
         self.root.lens[0] = root.len() as u32;
         self.root.n_ones[0] = root.num_ones() as u32;
-        self.root.ptrs[0] = PackedPtr::from(root);
+        self.root.ptrs[0] = PackedPtr::from_inner(root);
         self.root.ptrs[1] = ptr;
         self.root.debug_assert_indices();
     }
@@ -88,7 +89,8 @@ impl BitVec {
     pub fn insert(&mut self, index: usize, bit: bool) {
         debug_assert!(index <= self.len());
         if index == 0 && self.len() == 0 {
-            self.root.ptrs[0] = PackedPtr::from(Box::new(Bits256::from(bit)));
+            self.root.ptrs[0] =
+                PackedPtr::from_leaf(Box::new(Bits256::from(bit)));
             self.root.lens = [1; CAPACITY];
             self.root.n_ones = [bit as u32; CAPACITY];
             return;
@@ -113,7 +115,7 @@ impl BitVec {
             // Use an unsafe *mut raw pointer to work around borrow checker
             // restrictions (we are "releasing" the earlier borrows when
             // we reassign node, so there is never a double mutable borrow)
-            let n = &mut node.ptrs[rank] as *mut PackedPtr;
+            let n = &mut node.ptrs[rank] as *mut PackedPtr<Node, Bits256>;
             match unsafe { &mut *n }.expand_mut() {
                 PtrMut::None => unreachable!(),
                 PtrMut::Inner(inner) => {
@@ -141,7 +143,10 @@ impl BitVec {
 }
 
 impl FromIterator<bool> for BitVec {
-    fn from_iter<T>(input: T) -> Self where T: IntoIterator<Item=bool> {
+    fn from_iter<T>(input: T) -> Self
+    where
+        T: IntoIterator<Item = bool>,
+    {
         let mut bits = BitVec::new();
         for bit in input.into_iter() {
             bits.insert(bits.len(), bit);
@@ -178,7 +183,8 @@ impl SelectRank for BitVec {
     fn select0(&self, index: usize) -> usize {
         debug_assert!(
             index
-                < (self.root.lens[CAPACITY - 1] - self.root.n_ones[CAPACITY - 1])
+                < (self.root.lens[CAPACITY - 1]
+                    - self.root.n_ones[CAPACITY - 1])
                     as usize
         );
 
@@ -269,7 +275,7 @@ impl SelectRank for BitVec {
 struct Node {
     lens: [u32; CAPACITY],
     n_ones: [u32; CAPACITY],
-    ptrs: [PackedPtr; CAPACITY],
+    ptrs: [PackedPtr<Node, Bits256>; CAPACITY],
 }
 
 impl Drop for Node {
@@ -319,7 +325,7 @@ impl Node {
         node
     }
 
-    fn insert(&mut self, rank: usize, ptr: PackedPtr) {
+    fn insert(&mut self, rank: usize, ptr: PackedPtr<Node, Bits256>) {
         debug_assert!(rank < CAPACITY - 1);
         debug_assert!(self.ptrs[CAPACITY - 1].is_null());
         debug_assert!(!self.ptrs[rank].is_null());
@@ -408,30 +414,7 @@ impl Node {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
-struct PackedPtr(usize);
-
-enum Ptr<'a> {
-    None,
-    Leaf(&'a Bits256),
-    Inner(&'a Node),
-}
-
-enum PtrMut<'a> {
-    None,
-    Leaf(&'a mut Bits256),
-    Inner(&'a mut Node),
-}
-
-impl PackedPtr {
-    fn null() -> PackedPtr {
-        PackedPtr(0)
-    }
-
-    fn is_null(self) -> bool {
-        self.0 == 0
-    }
-
+impl PackedPtr<Node, Bits256> {
     fn num_ones(self) -> u32 {
         debug_assert!(!self.is_null());
         match self.expand() {
@@ -447,42 +430,6 @@ impl PackedPtr {
             Ptr::Leaf(leaf) => leaf.len(),
             Ptr::Inner(inner) => inner.len(),
         }
-    }
-
-    fn expand(&self) -> Ptr<'_> {
-        if self.is_null() {
-            Ptr::None
-        } else if self.0 & 0b1 == 0 {
-            Ptr::Leaf(unsafe { &*(self.0 as *const _) })
-        } else {
-            Ptr::Inner(unsafe { &*((self.0 - 1) as *const _) })
-        }
-    }
-
-    fn expand_mut(&mut self) -> PtrMut<'_> {
-        if self.is_null() {
-            PtrMut::None
-        } else if self.0 & 0b1 == 0 {
-            PtrMut::Leaf(unsafe { &mut *(self.0 as *mut _) })
-        } else {
-            PtrMut::Inner(unsafe { &mut *((self.0 - 1) as *mut _) })
-        }
-    }
-}
-
-impl From<Box<Node>> for PackedPtr {
-    fn from(node: Box<Node>) -> PackedPtr {
-        let value = Box::into_raw(node) as usize;
-        debug_assert_eq!(value & 0b1, 0);
-        PackedPtr(value | 1)
-    }
-}
-
-impl From<Box<Bits256>> for PackedPtr {
-    fn from(node: Box<Bits256>) -> PackedPtr {
-        let value = Box::into_raw(node) as usize;
-        debug_assert_eq!(value & 0b1, 0);
-        PackedPtr(value)
     }
 }
 
@@ -662,7 +609,7 @@ mod test {
 
         let ptrs = (0..CAPACITY)
             .map(|_| {
-                PackedPtr::from(Box::new(Bits256 {
+                PackedPtr::from_leaf(Box::new(Bits256 {
                     n_ones: [0, 64, 128, 192],
                     len: 256,
                     bits: [u64::max_value(); 4],
