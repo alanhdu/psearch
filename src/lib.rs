@@ -5,3 +5,4 @@ pub mod yfast;
 
 pub(crate) mod array;
 pub(crate) mod tree;
+pub(crate) mod utils;

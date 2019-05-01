@@ -2,6 +2,7 @@ use std::iter::FromIterator;
 
 use super::SelectRank;
 use crate::array::{u16x32, u9x7::u9x7};
+use crate::utils::binary_search_rank;
 
 /// Static bit-vectors that support select and rank
 #[derive(Debug, Eq, PartialEq)]
@@ -161,29 +162,6 @@ impl SelectRank for SBitVec {
             + index1_rank * 512
             + index2_rank * (512 * 33)
     }
-}
-
-fn binary_search_rank<T, F>(needle: T, len: usize, func: F) -> usize
-where
-    T: Ord,
-    F: Fn(usize) -> T,
-{
-    let mut low = 0;
-    let mut high = len;
-    let mut mid = (low + high) / 2;
-
-    while low < high {
-        if needle < func(mid) {
-            high = mid;
-        } else if needle == func(mid) {
-            break;
-        } else {
-            low = mid + 1;
-        }
-        mid = (low + high) / 2;
-    }
-
-    mid
 }
 
 impl FromIterator<bool> for SBitVec {
