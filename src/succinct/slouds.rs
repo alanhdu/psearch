@@ -182,7 +182,8 @@ mod test {
         // 4       e   f   g  h i   j k
         //        /|\         |    / \
         // 11    l m n        o   p   q
-        let slouds = SloudsTrie::from_iter(keys.iter().map(|k| (k, ())));
+        let slouds =
+            SloudsTrie::from_iter(keys.iter().map(|k| (k, k[k.len() - 1])));
 
         assert_eq!(
             slouds.trie.to_vec(),
@@ -215,7 +216,13 @@ mod test {
                 b'l', b'm', b'n', b'o', b'p', b'q'
             ]
         );
-        assert_eq!(slouds.values, vec![(); 11]);
+        assert_eq!(
+            slouds.values,
+            vec![
+                b'b', b'f', b'g', b'i', b'k', b'l', b'm', b'n', b'o', b'p',
+                b'q'
+            ]
+        );
     }
 
     #[test]
