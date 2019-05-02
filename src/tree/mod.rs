@@ -46,6 +46,28 @@ impl<L: Leaf> Tree<L> {
         }
     }
 
+    pub(crate) fn get_leaf_mut(&mut self, mut index: usize) -> (&mut L, usize) {
+        debug_assert!(index < self.len());
+        let mut node: &mut Node<L> = &mut self.root;
+
+        loop {
+            let rank = u32x16::rank(&node.lens, 1 + index as u32) as usize;
+            if rank > 0 {
+                index -= node.lens[rank - 1] as usize;
+            }
+
+            match node.ptrs[rank].expand_mut() {
+                PtrMut::None => unreachable!(),
+                PtrMut::Inner(inner) => {
+                    node = inner;
+                }
+                PtrMut::Leaf(leaf) => {
+                    return (leaf, index);
+                }
+            }
+        }
+    }
+
     pub(crate) fn insert(&mut self, index: usize, value: L::Output) {
         debug_assert!(index <= self.len());
         if index == 0 && self.len() == 0 {

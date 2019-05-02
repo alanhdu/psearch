@@ -184,6 +184,11 @@ impl BitVec {
             }
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn to_vec(&self) -> Vec<bool> {
+        self.root.to_vec()
+    }
 }
 
 impl FromIterator<bool> for BitVec {

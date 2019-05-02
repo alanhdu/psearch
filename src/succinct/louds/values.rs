@@ -9,6 +9,16 @@ impl<T> ValueTree<T> {
         let (leaf, index) = self.get_leaf(index);
         &leaf[index]
     }
+
+    pub(crate) fn set(&mut self, index: usize, value: T) -> T {
+        let (leaf, index) = self.get_leaf_mut(index);
+        std::mem::replace(&mut leaf[index], value)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn to_vec(&self) -> Vec<&T> {
+        (0..self.len()).map(|i| self.get(i)).collect::<Vec<_>>()
+    }
 }
 
 impl<T> Leaf for Vec<T> {
