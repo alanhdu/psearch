@@ -2,10 +2,10 @@ mod ptr;
 
 use crate::array::u32x16;
 pub(crate) use ptr::{PackedPtr, Ptr, PtrMut};
+use std::ptr::NonNull;
 
 const CAPACITY: usize = 16;
 
-#[derive(Debug)]
 pub(crate) struct Tree<L: Leaf> {
     root: Box<Node<L>>,
 }
@@ -80,7 +80,7 @@ impl<L: Leaf> Tree<L> {
             return;
         }
 
-        let mut stack: Vec<(*mut Node<L>, usize)> = Vec::new();
+        let mut stack: Vec<(NonNull<Node<L>>, usize)> = Vec::new();
         let mut node: &mut Node<L> = &mut self.root;
         let mut index = index as u32;
         loop {
@@ -94,7 +94,7 @@ impl<L: Leaf> Tree<L> {
             match unsafe { &mut *n }.expand_mut() {
                 PtrMut::None => unreachable!(),
                 PtrMut::Inner(inner) => {
-                    stack.push((node as *mut _, rank));
+                    stack.push((NonNull::from(node), rank));
                     node = inner;
                 }
                 PtrMut::Leaf(leaf) => {
@@ -105,7 +105,7 @@ impl<L: Leaf> Tree<L> {
                         } else {
                             leaf.insert(index as usize, value);
                         }
-                        stack.push((node, rank));
+                        stack.push((NonNull::from(node), rank));
                         self.split(stack, new);
                     } else {
                         leaf.insert(index as usize, value);
@@ -116,11 +116,11 @@ impl<L: Leaf> Tree<L> {
         }
     }
 
-    fn split(&mut self, stack: Vec<(*mut Node<L>, usize)>, new: Box<L>) {
+    fn split(&mut self, stack: Vec<(NonNull<Node<L>>, usize)>, new: Box<L>) {
         let mut ptr = PackedPtr::from_leaf(new);
 
         for (node, rank) in stack.iter().rev().cloned() {
-            let node = unsafe { &mut *node };
+            let node = unsafe { &mut *node.as_ptr() };
             if !node.is_full() {
                 node.shift_right(rank);
                 node.ptrs[rank + 1] = ptr;
@@ -160,7 +160,6 @@ impl<L: Leaf> Tree<L> {
     }
 }
 
-#[derive(Debug)]
 struct Node<L: Leaf> {
     lens: [u32; CAPACITY],
     ptrs: [PackedPtr<Node<L>, L>; CAPACITY],
