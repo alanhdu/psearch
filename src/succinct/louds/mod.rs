@@ -48,7 +48,6 @@ impl<T> LoudsTrie<T> {
     }
 
     pub fn insert<K: AsRef<[u8]>>(&mut self, key: K, value: T) -> Option<T> {
-        dbg!(key.as_ref());
         let mut cursor = Cursor {
             bit_pos: 0,
             node_pos: 0,
@@ -69,13 +68,11 @@ impl<T> LoudsTrie<T> {
                 let degree = self.degree(cursor.bit_pos);
                 let (child_number, found) =
                     self.bytes.child_number(byte_begin, degree, byte);
-                dbg!(child_number);
                 if found != byte {
                     let child = self.trie.select0(
                         self.trie.rank1(cursor.bit_pos + child_number),
                     );
                     debug_assert!(child > cursor.bit_pos);
-                    dbg!(child);
 
                     self.trie.insert(child, false);
                     self.trie.insert(cursor.bit_pos, true);
@@ -87,18 +84,6 @@ impl<T> LoudsTrie<T> {
                     cursor = self.child(cursor.bit_pos, child_number);
                 }
             };
-
-            eprintln!();
-            #[cfg(test)]
-            dbg!(
-                &cursor,
-                byte,
-                self.bytes.to_vec(),
-                self.has_value.to_vec(),
-                self.trie.to_vec()
-            );
-
-            eprintln!();
         }
 
         let value_index = self.has_value.rank1(cursor.node_pos);

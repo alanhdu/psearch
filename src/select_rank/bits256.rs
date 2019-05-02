@@ -239,7 +239,6 @@ impl SelectRank for Bits256 {
         let mut i = 2 * (index >= self.n_ones[2] as usize) as usize;
         i += (index >= self.n_ones[i + 1] as usize) as usize;
 
-        dbg!(index, i, self.n_ones);
         let index = index - self.n_ones[i as usize] as usize;
         64 * i as usize + self.bits[i].select1(index)
     }
