@@ -81,6 +81,21 @@ pub(crate) fn increment(values: &mut [u32; 16], mut pos: usize) {
     }
 }
 
+pub(crate) fn decrement(values: &mut [u32; 16], mut pos: usize) {
+    unsafe {
+        if pos < 8 {
+            let half = loadu(values);
+            let inc = loadu(&INCREMENT[8 - pos..]);
+
+            storeu(values, _mm256_sub_epi32(half, inc));
+            pos = 8;
+        }
+        let half = loadu(&values[8..]);
+        let inc = loadu(&INCREMENT[16 - pos..]);
+        storeu(&mut values[8..], _mm256_sub_epi32(half, inc));
+    }
+}
+
 pub(crate) fn split(src: &mut [u32; 16], dest: &mut [u32; 16]) {
     unsafe {
         let bottom = _mm256_set1_epi32(std::mem::transmute::<u32, i32>(src[7]));

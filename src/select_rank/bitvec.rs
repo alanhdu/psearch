@@ -140,6 +140,50 @@ impl BitVec {
             }
         }
     }
+
+    pub fn set_bit(&mut self, index: usize, bit: bool) {
+        let mut index = index as u32;
+        let mut stack: Vec<(*mut Node, usize)> =
+            Vec::with_capacity((64 - self.len().leading_zeros() as usize) / 4);
+        let mut node: &mut Node = &mut self.root;
+
+        let old_bit = loop {
+
+            let rank = u32x16::rank(&node.lens, 1 + index) as usize;
+            if rank > 0 {
+                index -= node.lens[rank - 1];
+            }
+            stack.push((node as *mut _, rank));
+
+            // Use an unsafe *mut raw pointer to work around borrow checker
+            // restrictions (we are "releasing" the earlier borrows when
+            // we reassign node, so there is never a double mutable borrow)
+            let n = &mut node.ptrs[rank] as *mut PackedPtr<Node, Bits256>;
+            match unsafe { &mut *n }.expand_mut() {
+                PtrMut::None => unreachable!(),
+                PtrMut::Inner(inner) => {
+                    node = inner;
+                }
+                PtrMut::Leaf(leaf) => {
+                    let old_bit = leaf.get_bit(index as usize);
+                    leaf.set_bit(index as usize, bit);
+                    break old_bit;
+                }
+            }
+        };
+
+        if !old_bit && bit {
+            for (node, rank) in stack.iter().cloned() {
+                let node = unsafe { node.as_mut().unwrap() };
+                u32x16::increment(&mut node.n_ones, rank);
+            }
+        } else if old_bit && !bit {
+            for (node, rank) in stack.iter().cloned() {
+                let node = unsafe { node.as_mut().unwrap() };
+                u32x16::decrement(&mut node.n_ones, rank);
+            }
+        }
+    }
 }
 
 impl FromIterator<bool> for BitVec {
@@ -597,6 +641,23 @@ mod test {
             assert_eq!(bits.select0(i), i);
             assert_eq!(bits.select1(i), len + i);
         }
+    }
+
+    #[test]
+    fn test_bitvec_set_bit() {
+        let mut bits = BitVec::from_iter(vec![false; 1000]);
+        let mut expected = Vec::with_capacity(1000);
+        for i in 0..1000 {
+            bits.get_bit(i);
+            bits.set_bit(i, i % 2 == 0);
+
+
+            expected.push(i % 2 == 0);
+            bits.root.debug_assert_indices();
+        }
+
+        assert_eq!(bits.root.to_vec(), expected);
+        bits.root.debug_assert_indices();
     }
 
     #[test]
