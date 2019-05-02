@@ -42,11 +42,9 @@ impl<T> SloudsTrie<T> {
             let degree = self.degree(cursor.bit_pos);
             let slice = &self.bytes[byte_begin..byte_begin + degree];
             let child = slice.binary_search(byte).ok()?;
-
             cursor = self.child(cursor.bit_pos, child);
         }
 
-        dbg!(&cursor);
         if self.has_value.get_bit(cursor.node_pos) {
             let value_pos = self.has_value.rank1(cursor.node_pos);
             self.values.get(value_pos)
