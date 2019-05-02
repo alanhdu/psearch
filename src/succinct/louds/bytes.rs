@@ -1,8 +1,6 @@
 use crate::tree::{Leaf, Tree};
 use crate::utils::binary_search_rank;
 
-const CAPACITY: usize = 16;
-
 pub(super) type ByteTree = Tree<ByteLeaf>;
 
 impl ByteTree {
@@ -16,6 +14,7 @@ impl ByteTree {
         leaf.child_number(index, degree, needle)
     }
 
+    #[cfg(test)]
     pub(crate) fn get(&self, index: usize) -> u8 {
         let (leaf, index) = self.get_leaf(index);
         leaf.bytes[index]
@@ -66,20 +65,20 @@ impl Leaf for ByteLeaf {
             bytes: [0; Self::CAPACITY],
             next: std::ptr::null_mut(),
         });
-        // Why does the following not work??
         self.bytes[127..].swap_with_slice(&mut leaf.bytes[..128]);
         self.next = Box::into_raw(leaf);
         unsafe { Box::from_raw(self.next) }
-
     }
 
     fn insert(&mut self, index: usize, byte: u8) {
-        unsafe {
-            std::ptr::copy(
-                &self.bytes[index],
-                &mut self.bytes[index + 1],
-                self.len as usize - index,
-            );
+        if index < 254 {
+            unsafe {
+                std::ptr::copy(
+                    &self.bytes[index],
+                    &mut self.bytes[index + 1],
+                    self.len as usize - index,
+                );
+            }
         }
         self.len += 1;
         self.bytes[index] = byte;
@@ -123,33 +122,102 @@ mod test {
     use super::*;
 
     #[test]
+    fn test_byteleaf_split() {
+        let mut leaf = ByteLeaf {
+            len: 255,
+            bytes: [0xAA; 255],
+            next: std::ptr::null_mut(),
+        };
+        let new = leaf.split();
+        let raw = Box::into_raw(new);
+        let new = unsafe { Box::from_raw(raw) };
+
+        assert_eq!(leaf.next, raw);
+        assert_eq!(leaf.len, 127);
+
+        let mut expected = vec![0xAAu8; 127];
+        expected.append(&mut vec![0; 128]);
+        assert_eq!(&leaf.bytes as &[u8], &expected as &[u8]);
+
+        assert_eq!(new.len, 128);
+        assert!(new.next.is_null());
+        let mut expected = vec![0xAAu8; 128];
+        expected.append(&mut vec![0; 127]);
+        assert_eq!(&new.bytes as &[u8], &expected as &[u8]);
+    }
+
+    #[test]
+    fn test_byteleaf_insert_begin() {
+        let mut leaf = ByteLeaf::new(255);
+        let mut expected = vec![255u8];
+
+        for i in 0..254 {
+            leaf.insert(0, i);
+            expected.insert(0, i);
+
+            assert_eq!(leaf.len(), expected.len());
+        }
+        assert_eq!(&leaf.bytes as &[u8], &expected as &[u8]);
+    }
+
+    #[test]
+    fn test_byteleaf_insert_end() {
+        let mut leaf = ByteLeaf::new(255);
+        let mut expected = vec![255u8];
+
+        for i in 0..254 {
+            leaf.insert(leaf.len(), i);
+            expected.insert(expected.len(), i);
+
+            assert_eq!(leaf.len(), expected.len());
+        }
+        assert_eq!(&leaf.bytes as &[u8], &expected as &[u8]);
+    }
+
+    #[test]
+    fn test_byteleaf_insert_middle() {
+        let mut leaf = ByteLeaf::new(255);
+        let mut expected = vec![255u8];
+
+        for i in 0..254 {
+            leaf.insert(leaf.len() / 2, i);
+            expected.insert(expected.len() / 2, i);
+
+            assert_eq!(leaf.len(), expected.len());
+        }
+        assert_eq!(&leaf.bytes as &[u8], &expected as &[u8]);
+    }
+
+    #[test]
     fn test_bytetree_insert_begin() {
         let reference =
             (0..10000usize).map(|i| (i % 256) as u8).collect::<Vec<_>>();
-        let mut values = ByteTree::new();
+        let mut bytes = ByteTree::new();
 
         for (i, v) in reference.iter().rev().cloned().enumerate() {
-            values.insert(0, v);
-            assert_eq!(values.len(), i + 1);
+            bytes.insert(0, v);
+            assert_eq!(bytes.len(), i + 1);
         }
 
         for i in 0..10000 {
-            assert_eq!(values.get(i), reference[i]);
+            assert_eq!(bytes.get(i), reference[i]);
         }
     }
 
+    #[test]
     fn test_bytetree_insert_end() {
         let reference =
             (0..10000usize).map(|i| (i % 256) as u8).collect::<Vec<_>>();
-        let mut values = ByteTree::new();
+        let mut bytes = ByteTree::new();
 
-        for (i, v) in reference.iter().rev().cloned().enumerate() {
-            values.insert(values.len(), v);
-            assert_eq!(values.len(), i + 1);
+        for (i, v) in reference.iter().cloned().enumerate() {
+            bytes.insert(bytes.len(), v);
+            assert_eq!(bytes.len(), i + 1);
+            assert_eq!(bytes.get(i), reference[i]);
         }
 
         for i in 0..10000 {
-            assert_eq!(values.get(i), reference[i]);
+            assert_eq!(bytes.get(i), reference[i]);
         }
     }
 }

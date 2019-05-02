@@ -148,7 +148,6 @@ impl BitVec {
         let mut node: &mut Node = &mut self.root;
 
         let old_bit = loop {
-
             let rank = u32x16::rank(&node.lens, 1 + index) as usize;
             if rank > 0 {
                 index -= node.lens[rank - 1];
@@ -655,7 +654,6 @@ mod test {
         for i in 0..1000 {
             bits.get_bit(i);
             bits.set_bit(i, i % 2 == 0);
-
 
             expected.push(i % 2 == 0);
             bits.root.debug_assert_indices();

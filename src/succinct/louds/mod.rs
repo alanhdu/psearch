@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::select_rank::{BitVec, SelectRank};
 use std::iter::FromIterator;
 
@@ -39,6 +37,14 @@ impl<T> LoudsTrie<T> {
         louds.trie.insert(0, false);
         louds.has_value.insert(0, false);
         louds
+    }
+
+    pub fn total_size(&self) -> usize {
+        std::mem::size_of::<Self>()
+            + self.bytes.total_size()
+            + self.trie.total_size()
+            + self.has_value.total_size()
+            + self.values.total_size()
     }
 
     pub fn insert<K: AsRef<[u8]>>(&mut self, key: K, value: T) -> Option<T> {
@@ -144,7 +150,7 @@ impl<T> LoudsTrie<T> {
     }
 
     fn is_leaf(&self, cursor: usize) -> bool {
-        self.trie.get_bit(cursor) == false
+        !self.trie.get_bit(cursor)
     }
 
     fn degree(&self, cursor: usize) -> usize {

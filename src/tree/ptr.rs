@@ -66,7 +66,7 @@ impl<I, L> PackedPtr<I, L> {
         let value = Box::into_raw(node) as usize;
         debug_assert_eq!(value & 0b1, 0);
         PackedPtr {
-            value: value,
+            value,
             leaf: PhantomData,
             inner: PhantomData,
         }

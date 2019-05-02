@@ -1,7 +1,5 @@
 use crate::tree::{Leaf, Tree};
 
-const CAPACITY: usize = 16;
-
 pub(super) type ValueTree<T> = Tree<Vec<T>>;
 
 impl<T> ValueTree<T> {

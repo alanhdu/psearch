@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 mod ptr;
 
 use crate::array::u32x16;
@@ -6,6 +5,7 @@ pub(crate) use ptr::{PackedPtr, Ptr, PtrMut};
 
 const CAPACITY: usize = 16;
 
+#[derive(Debug)]
 pub(crate) struct Tree<L: Leaf> {
     root: Box<Node<L>>,
 }
@@ -18,6 +18,10 @@ impl<L: Leaf> Tree<L> {
                 ptrs: [PackedPtr::null(); CAPACITY],
             }),
         }
+    }
+
+    pub(crate) fn total_size(&self) -> usize {
+        std::mem::size_of::<Self>() + self.root.total_size()
     }
 
     pub(crate) fn len(&self) -> usize {
@@ -156,6 +160,7 @@ impl<L: Leaf> Tree<L> {
     }
 }
 
+#[derive(Debug)]
 struct Node<L: Leaf> {
     lens: [u32; CAPACITY],
     ptrs: [PackedPtr<Node<L>, L>; CAPACITY],

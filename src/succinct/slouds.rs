@@ -27,6 +27,14 @@ impl Cursor {
 }
 
 impl<T> SloudsTrie<T> {
+    pub fn total_size(&self) -> usize {
+        std::mem::size_of::<Self>()
+            + self.trie.total_size()
+            + self.has_value.total_size()
+            + self.bytes.capacity() * std::mem::size_of::<u8>()
+            + self.values.capacity() * std::mem::size_of::<T>()
+    }
+
     pub fn get<K: AsRef<[u8]>>(&self, key: K) -> Option<&T> {
         let mut cursor = Cursor {
             bit_pos: 0,
@@ -62,7 +70,7 @@ impl<T> SloudsTrie<T> {
     }
 
     fn is_leaf(&self, cursor: usize) -> bool {
-        self.trie.get_bit(cursor) == false
+        !self.trie.get_bit(cursor)
     }
 
     fn degree(&self, cursor: usize) -> usize {
@@ -84,20 +92,11 @@ struct BadTrie<T> {
 impl<T> BadTrie<T> {
     fn insert(&mut self, key: &[u8], value: T) {
         let mut node = self;
-        for i in 0..(key.len() - 1) {
-            let k = key[i];
-
-            if !node.children.contains_key(&k) {
-                node.children.insert(
-                    k,
-                    BadTrie {
-                        children: BTreeMap::new(),
-                        value: None,
-                    },
-                );
-            }
-
-            node = node.children.get_mut(&k).unwrap();
+        for k in key.iter().take(key.len() - 1).cloned() {
+            node = node.children.entry(k).or_insert(BadTrie {
+                children: BTreeMap::new(),
+                value: None,
+            });
         }
 
         let k = key.last().unwrap();
