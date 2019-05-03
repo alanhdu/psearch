@@ -227,31 +227,27 @@ impl FromIterator<bool> for SBitVec {
 
         // Handle stragglers:
         let i = sbitvec.len - 1;
-        if i % 64 != 0 {
-            sbitvec.blocks.push(block);
-            index1[(i / 64) % 8] = block.count_ones() as u16;
-        }
-        if i % 512 != 0 {
-            let mut output = [0; 7];
-            output[0] = index1[0];
-            for i in 1..7 {
-                output[i] = output[i - 1] + index1[i];
-            }
-            sbitvec.index1.push(u9x7::new(output));
+        sbitvec.blocks.push(block);
+        index1[(i / 64) % 8] = block.count_ones() as u16;
 
-            index2[(i / 512) % 33] = output[6] + index1[7];
+        let mut output = [0; 7];
+        output[0] = index1[0];
+        for i in 1..7 {
+            output[i] = output[i - 1] + index1[i];
         }
-        if i % (512 * 33) != 0 {
-            let mut output = [0; 32];
-            output[0] = index2[0];
-            for i in 1..32 {
-                output[i] = output[i - 1] + index2[i];
-            }
-            sbitvec.index2.push(output);
+        sbitvec.index1.push(u9x7::new(output));
 
-            index3 += u32::from(output[31]) + u32::from(index2[32]);
-            sbitvec.index3.push(index3);
+        index2[(i / 512) % 33] = output[6] + index1[7];
+
+        let mut output = [0; 32];
+        output[0] = index2[0];
+        for i in 1..32 {
+            output[i] = output[i - 1] + index2[i];
         }
+        sbitvec.index2.push(output);
+
+        index3 += u32::from(output[31]) + u32::from(index2[32]);
+        sbitvec.index3.push(index3);
 
         sbitvec
     }
@@ -398,5 +394,11 @@ mod test {
             assert_eq!(bits.select0(i), 2 * i);
             assert_eq!(bits.select1(i), 2 * i + 1);
         }
+    }
+
+    #[test]
+    fn test_sbitvec_boundary_construction() {
+        assert_eq!(SBitVec::from_iter(vec![false; 64]).blocks, vec![0]);
+        assert_eq!(SBitVec::from_iter(vec![false; 65]).blocks, vec![0, 0]);
     }
 }
