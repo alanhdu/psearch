@@ -7,9 +7,22 @@ use psearch::succinct::{LoudsTrie, SloudsTrie};
 proptest! {
     #[test]
     #[ignore]
+    fn proptest_loudstrie_u64(
+        values in prop::collection::vec(
+            any::<u64>(), 1..10_000
+        ),
+    ) {
+        let mut louds = LoudsTrie::new();
+        for key in values.iter() {
+            louds.insert(key.to_be_bytes(), ());
+        }
+    }
+
+    #[test]
+    #[ignore]
     fn proptest_loudstrie_fixed_len(
         map in prop::collection::hash_map(
-            any::<[u8; 8]>(), any::<u64>(), 1..10000
+            any::<[u8; 8]>(), any::<u64>(), 1..10_000
         ),
         input: Vec<[u8; 8]>,
     ) {
