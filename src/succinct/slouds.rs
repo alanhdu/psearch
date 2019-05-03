@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::VecDeque;
 use std::iter::FromIterator;
 
 use crate::select_rank::{SBitVec, SelectRank};
@@ -86,11 +86,36 @@ impl<T> SloudsTrie<T> {
 
 /// A really bad trie implementation to construct the SloudsTrie trie
 struct BadTrie<T> {
-    children: BTreeMap<u8, BadTrie<T>>,
+    children: Vec<(u8, BadTrie<T>)>,
     value: Option<T>,
 }
 
 impl<T> BadTrie<T> {
+    fn get_or_insert_child(&mut self, k: u8) -> &mut BadTrie<T> {
+        let mut max = self.children.len();
+        for i in 0..self.children.len() {
+            if self.children[i].0 < k {
+                continue;
+            } else if self.children[i].0 == k {
+                return &mut self.children[i].1;
+            } else {
+                max = i;
+                break;
+            }
+        }
+        self.children.insert(
+            max,
+            (
+                k,
+                BadTrie {
+                    children: Vec::new(),
+                    value: None,
+                },
+            ),
+        );
+        return &mut self.children[max].1;
+    }
+
     fn insert(&mut self, key: &[u8], value: T) {
         if key == b"" {
             self.value = Some(value);
@@ -98,26 +123,10 @@ impl<T> BadTrie<T> {
         }
 
         let mut node = self;
-        for k in key.iter().take(key.len() - 1).cloned() {
-            node = node.children.entry(k).or_insert(BadTrie {
-                children: BTreeMap::new(),
-                value: None,
-            });
+        for k in key.iter().cloned() {
+            node = node.get_or_insert_child(k);
         }
-
-        let k = key.last().unwrap();
-
-        if !node.children.contains_key(k) {
-            node.children.insert(
-                *k,
-                BadTrie {
-                    children: BTreeMap::new(),
-                    value: Some(value),
-                },
-            );
-        } else {
-            node.children.get_mut(k).unwrap().value = Some(value);
-        }
+        node.value = Some(value);
     }
 }
 
@@ -130,7 +139,7 @@ where
         I: IntoIterator<Item = (K, T)>,
     {
         let mut trie = BadTrie {
-            children: BTreeMap::new(),
+            children: Vec::new(),
             value: None,
         };
         for (key, value) in input.into_iter() {
@@ -143,12 +152,11 @@ where
         let mut has_value = Vec::new();
 
         let mut queue = VecDeque::new();
-        queue.push_back(&mut trie);
-        while let Some(current) = queue.pop_front() {
+        queue.push_back(trie);
+        while let Some(mut current) = queue.pop_front() {
             louds.append(&mut vec![true; current.children.len()]);
             louds.push(false);
 
-            bytes.extend(current.children.keys());
             if let Some(value) = current.value.take() {
                 values.push(value);
                 has_value.push(true);
@@ -156,7 +164,10 @@ where
                 has_value.push(false);
             }
 
-            queue.extend(current.children.values_mut());
+            for (k, v) in current.children.drain(..) {
+                bytes.push(k);
+                queue.push_back(v);
+            }
         }
 
         SloudsTrie {
