@@ -165,6 +165,23 @@ struct Node<L: Leaf> {
     ptrs: [PackedPtr<Node<L>, L>; CAPACITY],
 }
 
+impl<L: Leaf> Drop for Node<L> {
+    fn drop(&mut self) {
+        // TODO: avoid recursive drop
+        for ptr in self.ptrs.iter_mut() {
+            match ptr.expand_mut() {
+                PtrMut::None => {}
+                PtrMut::Leaf(leaf) => unsafe {
+                    drop(Box::from_raw(leaf as *mut _));
+                },
+                PtrMut::Inner(inner) => unsafe {
+                    drop(Box::from_raw(inner as *mut _));
+                },
+            }
+        }
+    }
+}
+
 impl<L: Leaf> Node<L> {
     fn total_size(&self) -> usize {
         let mut size = std::mem::size_of::<Self>();
