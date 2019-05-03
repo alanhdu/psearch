@@ -19,7 +19,7 @@ name = "xfast_set"
 harness = false
 
 [[bench]]
-name = "slouds"
+name = "succinct"
 harness = false
 
 [profile.release]
