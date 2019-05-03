@@ -44,7 +44,6 @@ impl BitVec {
                 node.insert(rank, ptr);
                 node.lens[rank] -= ptr.len() as u32;
                 node.n_ones[rank] -= ptr.num_ones();
-                node.debug_assert_indices();
                 return;
             } else {
                 let mut new = Box::new(node.split());
@@ -57,9 +56,6 @@ impl BitVec {
                     node.lens[rank] -= ptr.len() as u32;
                     node.n_ones[rank] -= ptr.num_ones();
                 }
-
-                new.debug_assert_indices();
-                node.debug_assert_indices();
                 ptr = PackedPtr::from_inner(new);
             }
         }
@@ -83,7 +79,6 @@ impl BitVec {
         self.root.n_ones[0] = root.num_ones() as u32;
         self.root.ptrs[0] = PackedPtr::from_inner(root);
         self.root.ptrs[1] = ptr;
-        self.root.debug_assert_indices();
     }
 
     pub fn insert(&mut self, index: usize, bit: bool) {
@@ -104,8 +99,6 @@ impl BitVec {
         let mut node: &mut Node = &mut self.root;
 
         loop {
-            node.debug_assert_indices();
-
             let rank = u32x16::rank(&node.lens, index) as usize;
             if rank > 0 {
                 index -= node.lens[rank - 1];
@@ -420,6 +413,7 @@ impl Node {
         self.lens[CAPACITY - 1] as usize
     }
 
+    #[cfg(test)]
     fn debug_assert_indices(&self) {
         let mut len = 0;
         let mut n_ones = 0;
