@@ -4,6 +4,7 @@ use std::iter::FromIterator;
 use crate::select_rank::{SBitVec, SelectRank};
 
 /// A Static LOUDS trie
+#[derive(Debug, Eq, PartialEq)]
 pub struct SloudsTrie<T> {
     trie: SBitVec,
     has_value: SBitVec,
@@ -91,6 +92,11 @@ struct BadTrie<T> {
 
 impl<T> BadTrie<T> {
     fn insert(&mut self, key: &[u8], value: T) {
+        if key == b"" {
+            self.value = Some(value);
+            return;
+        }
+
         let mut node = self;
         for k in key.iter().take(key.len() - 1).cloned() {
             node = node.children.entry(k).or_insert(BadTrie {
@@ -344,5 +350,17 @@ mod test {
         for k in numbers.iter() {
             assert_eq!(slouds.get(k.to_be_bytes()), Some(&k));
         }
+    }
+
+    #[test]
+    fn test_slouds_empty() {
+        let slouds = SloudsTrie::from_iter([(b"", 0)].iter().cloned());
+
+        assert_eq!(slouds.trie.to_vec(), vec![false]);
+        assert_eq!(slouds.has_value.to_vec(), vec![true]);
+        assert_eq!(slouds.bytes, vec![]);
+        assert_eq!(slouds.values, vec![0]);
+
+        assert_eq!(slouds.get(b""), Some(&0));
     }
 }

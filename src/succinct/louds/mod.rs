@@ -68,7 +68,7 @@ impl<T> LoudsTrie<T> {
                 let degree = self.degree(cursor.bit_pos);
                 let (child_number, found) =
                     self.bytes.child_number(byte_begin, degree, byte);
-                if found != byte {
+                if !found {
                     let child = self.trie.select0(
                         self.trie.rank1(cursor.bit_pos + child_number),
                     );
@@ -112,7 +112,7 @@ impl<T> LoudsTrie<T> {
 
             let (child_number, found) =
                 self.bytes.child_number(byte_begin, degree, *byte);
-            if found != *byte {
+            if !found {
                 return None;
             }
             cursor = self.child(cursor.bit_pos, child_number);

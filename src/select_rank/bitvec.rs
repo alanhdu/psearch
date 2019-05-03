@@ -484,7 +484,6 @@ impl PackedPtr<Node, Bits256> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use proptest::prelude::*;
 
     #[test]
     fn test_bitvec_total_size() {
@@ -745,46 +744,6 @@ mod test {
         for i in 0..2400 {
             assert_eq!(bits.select0(i), i);
             assert_eq!(bits.select1(i), 2400 + i);
-        }
-    }
-
-    proptest! {
-        #[test]
-        #[ignore]   // Too slow to run normally
-        fn test_bitvec_proptest_insert(input
-            in prop::collection::vec(any::<(bool, usize)>(), 1..65536)
-        ) {
-            let mut expected = Vec::with_capacity(input.len());
-            let mut bits = BitVec::new();
-
-            for (bit, order) in input.iter().cloned() {
-                let order = order % (expected.len() + 1);
-                bits.insert(order, bit);
-                expected.insert(order, bit);
-
-                prop_assert_eq!(&expected, &bits.root.to_vec());
-            }
-
-            let mut n_ones = 0;
-            let mut n_zeros = 0;
-            for (i, bit) in expected.iter().cloned().enumerate() {
-                prop_assert_eq!(bits.rank0(i), n_zeros);
-                prop_assert_eq!(bits.rank1(i), n_ones);
-
-                prop_assert_eq!(bits.get_bit(i), bit);
-
-                n_zeros += !bit as usize;
-                n_ones += bit as usize;
-            }
-            prop_assert_eq!(n_zeros, bits.len() - bits.num_ones() as usize);
-            prop_assert_eq!(n_ones, bits.num_ones() as usize);
-
-            for i in 0..n_zeros {
-                prop_assert_eq!(expected[bits.select0(i)], false);
-            }
-            for i in 0..n_ones {
-                prop_assert_eq!(expected[bits.select1(i)], true);
-            }
         }
     }
 }

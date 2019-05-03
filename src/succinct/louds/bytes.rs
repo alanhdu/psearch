@@ -1,5 +1,5 @@
 use crate::tree::{Leaf, Tree};
-use crate::utils::binary_search_rank;
+use crate::utils::binary_search_rank_equal;
 
 pub(super) type ByteTree = Tree<ByteLeaf>;
 
@@ -9,7 +9,7 @@ impl ByteTree {
         index: usize,
         degree: usize,
         needle: u8,
-    ) -> (usize, u8) {
+    ) -> (usize, bool) {
         let (leaf, index) = self.get_leaf(index);
         leaf.child_number(index, degree, needle)
     }
@@ -91,28 +91,25 @@ impl ByteLeaf {
         index: usize,
         degree: usize,
         needle: u8,
-    ) -> (usize, u8) {
+    ) -> (usize, bool) {
         if index + degree > self.len as usize {
             if self.bytes[self.len as usize - 1] < needle {
                 let next = unsafe { self.next.as_ref() }.unwrap();
-                let rank = binary_search_rank(
+                let (rank, found) = binary_search_rank_equal(
                     needle,
                     index + degree - self.len as usize,
                     |i| next.bytes[i],
                 );
-                (self.len as usize - index + rank, next.bytes[rank])
+                (self.len as usize - index + rank, found)
             } else {
-                let rank = binary_search_rank(
+                binary_search_rank_equal(
                     needle,
                     self.len as usize - index,
                     |i| self.bytes[index + i],
-                );
-                (rank, self.bytes[index + rank])
+                )
             }
         } else {
-            let rank =
-                binary_search_rank(needle, degree, |i| self.bytes[index + i]);
-            (rank, self.bytes[index + rank])
+            binary_search_rank_equal(needle, degree, |i| self.bytes[index + i])
         }
     }
 }
