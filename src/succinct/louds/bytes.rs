@@ -59,11 +59,13 @@ impl Leaf for ByteLeaf {
     }
 
     fn split(&mut self) -> Box<Self> {
+        debug_assert!(self.is_full());
+
         self.len = 127;
         let mut leaf = Box::new(ByteLeaf {
             len: 128,
             bytes: [0; Self::CAPACITY],
-            next: std::ptr::null_mut(),
+            next: self.next,
         });
         self.bytes[127..].swap_with_slice(&mut leaf.bytes[..128]);
         self.next = Box::into_raw(leaf);
@@ -120,10 +122,11 @@ mod test {
 
     #[test]
     fn test_byteleaf_split() {
+        let next = Box::into_raw(Box::new(ByteLeaf::new(0)));
         let mut leaf = ByteLeaf {
             len: 255,
             bytes: [0xAA; 255],
-            next: std::ptr::null_mut(),
+            next: next,
         };
         let new = leaf.split();
         let raw = Box::into_raw(new);
@@ -131,16 +134,17 @@ mod test {
 
         assert_eq!(leaf.next, raw);
         assert_eq!(leaf.len, 127);
-
         let mut expected = vec![0xAAu8; 127];
         expected.append(&mut vec![0; 128]);
         assert_eq!(&leaf.bytes as &[u8], &expected as &[u8]);
 
         assert_eq!(new.len, 128);
-        assert!(new.next.is_null());
+        assert_eq!(new.next, next);
         let mut expected = vec![0xAAu8; 128];
         expected.append(&mut vec![0; 127]);
         assert_eq!(&new.bytes as &[u8], &expected as &[u8]);
+
+        unsafe { Box::from_raw(next) };
     }
 
     #[test]
