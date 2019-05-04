@@ -1,9 +1,11 @@
 mod bits256;
+mod bits512;
 mod bitvec;
 mod sbitvec;
 mod u64;
 
 pub use bits256::Bits256;
+pub use bits512::Bits512;
 pub use bitvec::BitVec;
 pub use sbitvec::SBitVec;
 

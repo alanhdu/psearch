@@ -2,7 +2,7 @@ use std::fmt;
 
 #[allow(non_camel_case_types)]
 #[derive(Copy, Clone, Eq, PartialEq)]
-pub(crate) struct u9x7(u64);
+pub(crate) struct u9x7(pub(crate) u64);
 
 impl u9x7 {
     pub(crate) fn new(data: [u16; 7]) -> u9x7 {
