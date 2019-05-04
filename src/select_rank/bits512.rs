@@ -78,6 +78,23 @@ impl Bits512 {
         self.len += 1;
     }
 
+    pub fn set_bit(&mut self, index: usize, bit: bool) {
+        debug_assert!(index < self.len as usize);
+        let upper = index / 64;
+        let lower = index % 64;
+
+        let prev_bit = self.bits[upper] & (1 << lower) != 0;
+        if prev_bit != bit {
+            if bit {
+                self.bits[upper] |= 1 << lower;
+                self.n_ones.0 += INCREMENT[upper];
+            } else {
+                self.bits[upper] &= !(1 << lower);
+                self.n_ones.0 -= INCREMENT[upper];
+            }
+        }
+    }
+
     pub fn split(&mut self) -> Bits512 {
         debug_assert!(self.is_full());
 
@@ -132,6 +149,16 @@ impl Bits512 {
             v.push(self.bits[upper] & (1 << lower) != 0);
         }
         v
+    }
+}
+
+impl From<bool> for Bits512 {
+    fn from(bit: bool) -> Bits512 {
+        Bits512 {
+            n_ones: u9x7::new([bit as u16; 7]),
+            bits: [bit as u64, 0, 0, 0, 0, 0, 0, 0],
+            len: 1,
+        }
     }
 }
 

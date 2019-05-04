@@ -1,4 +1,4 @@
-use super::{Bits256, SelectRank};
+use super::{Bits512, SelectRank};
 use crate::array::u32x16;
 use crate::tree::{PackedPtr, Ptr, PtrMut};
 use std::iter::FromIterator;
@@ -36,7 +36,7 @@ impl BitVec {
         self.len() as u32 - self.num_ones()
     }
 
-    fn split(&mut self, stack: Vec<(*mut Node, usize)>, new: Box<Bits256>) {
+    fn split(&mut self, stack: Vec<(*mut Node, usize)>, new: Box<Bits512>) {
         let mut ptr = PackedPtr::from_leaf(new);
         for (node, rank) in stack.iter().rev().cloned() {
             let node = unsafe { &mut *node };
@@ -85,7 +85,7 @@ impl BitVec {
         debug_assert!(index <= self.len());
         if index == 0 && self.len() == 0 {
             self.root.ptrs[0] =
-                PackedPtr::from_leaf(Box::new(Bits256::from(bit)));
+                PackedPtr::from_leaf(Box::new(Bits512::from(bit)));
             self.root.lens = [1; CAPACITY];
             self.root.n_ones = [bit as u32; CAPACITY];
             return;
@@ -108,7 +108,7 @@ impl BitVec {
             // Use an unsafe *mut raw pointer to work around borrow checker
             // restrictions (we are "releasing" the earlier borrows when
             // we reassign node, so there is never a double mutable borrow)
-            let n = &mut node.ptrs[rank] as *mut PackedPtr<Node, Bits256>;
+            let n = &mut node.ptrs[rank] as *mut PackedPtr<Node, Bits512>;
             match unsafe { &mut *n }.expand_mut() {
                 PtrMut::None => unreachable!(),
                 PtrMut::Inner(inner) => {
@@ -118,8 +118,8 @@ impl BitVec {
                 PtrMut::Leaf(leaf) => {
                     if leaf.is_full() {
                         let mut new = Box::new(leaf.split());
-                        if index >= 128 {
-                            new.insert_bit(index as usize - 128, bit);
+                        if index >= 256 {
+                            new.insert_bit(index as usize - 256, bit);
                         } else {
                             leaf.insert_bit(index as usize, bit);
                         }
@@ -150,7 +150,7 @@ impl BitVec {
             // Use an unsafe *mut raw pointer to work around borrow checker
             // restrictions (we are "releasing" the earlier borrows when
             // we reassign node, so there is never a double mutable borrow)
-            let n = &mut node.ptrs[rank] as *mut PackedPtr<Node, Bits256>;
+            let n = &mut node.ptrs[rank] as *mut PackedPtr<Node, Bits512>;
             match unsafe { &mut *n }.expand_mut() {
                 PtrMut::None => unreachable!(),
                 PtrMut::Inner(inner) => {
@@ -316,7 +316,7 @@ impl SelectRank for BitVec {
 struct Node {
     lens: [u32; CAPACITY],
     n_ones: [u32; CAPACITY],
-    ptrs: [PackedPtr<Node, Bits256>; CAPACITY],
+    ptrs: [PackedPtr<Node, Bits512>; CAPACITY],
 }
 
 impl Drop for Node {
@@ -366,7 +366,7 @@ impl Node {
         node
     }
 
-    fn insert(&mut self, rank: usize, ptr: PackedPtr<Node, Bits256>) {
+    fn insert(&mut self, rank: usize, ptr: PackedPtr<Node, Bits512>) {
         debug_assert!(rank < CAPACITY - 1);
         debug_assert!(self.ptrs[CAPACITY - 1].is_null());
         debug_assert!(!self.ptrs[rank].is_null());
@@ -456,7 +456,7 @@ impl Node {
     }
 }
 
-impl PackedPtr<Node, Bits256> {
+impl PackedPtr<Node, Bits512> {
     fn num_ones(self) -> u32 {
         debug_assert!(!self.is_null());
         match self.expand() {
@@ -478,26 +478,27 @@ impl PackedPtr<Node, Bits256> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::array::u9x7::u9x7;
 
     #[test]
     fn test_bitvec_total_size() {
         // In the worst case (assuming that all nodes in our tree are at
         // the minimum size), we have:
-        //  - Bits256: 320 bits / 128                 = 2.5 n
+        //  - Bits512: 640 bits / 256                 = 2.5 n
         //  - Tree: \sum 1/8^k * 2048 bits / 8 blocks
-        //      = 8/7 * 2048 / (8 * 128)
-        //      = 2.28
-        // which should be about 4.78x bits to store.
+        //      = 8/7 * 2048 / (8 * 256)
+        //      = 1.14
+        // which should be about 3.64x bits to store in the worst case
 
         let bits = BitVec::from_iter(vec![true; 80]);
         // 304 bytes to store 10 bytes of data
-        //  = 30.4 x overhead
-        assert_eq!(bits.total_size(), 304);
+        //  = 34.4 x overhead
+        assert_eq!(bits.total_size(), 344);
 
         let bits = BitVec::from_iter(vec![false; 80000]);
         // 47240 bytes to store 10000 bytes of data
-        //  = 4.72x overhead
-        assert_eq!(bits.total_size(), 47240);
+        //  = 3.60x overhead
+        assert_eq!(bits.total_size(), 35976);
     }
 
     #[test]
@@ -529,29 +530,33 @@ mod test {
     #[test]
     fn test_bitvec_single_level_full_zeros() {
         let mut bits = BitVec::new();
-        for _ in 0..(128 + 128 * CAPACITY) {
+        for _ in 0..(256 + 256 * CAPACITY) {
             bits.insert(0, false);
 
             for i in 0..CAPACITY {
-                assert!(bits.root.lens[i] <= 256 * i as u32 + 256);
+                assert!(bits.root.lens[i] <= 512 * i as u32 + 512);
+                assert_eq!(bits.root.n_ones[i], 0);
+
+                if let Ptr::Leaf(leaf) = bits.root.ptrs[i].expand() {
+                    assert_eq!(leaf.num_ones(), 0);
+                }
             }
         }
 
         let mut len = 0;
-        let mut n_ones = 0;
         for i in 0..CAPACITY {
-            assert!(bits.root.lens[i] <= 256 * i as u32 + 256);
+            assert!(bits.root.lens[i] <= 512 * i as u32 + 512);
             if let Ptr::Leaf(leaf) = bits.root.ptrs[i].expand() {
                 len += leaf.len();
-                n_ones += leaf.num_ones();
                 assert_eq!(bits.root.lens[i] as usize, len);
-                assert_eq!(bits.root.n_ones[i], n_ones);
+                assert_eq!(leaf.num_ones(), 0);
+                assert_eq!(bits.root.n_ones[i], 0);
             } else {
                 unreachable!();
             }
         }
 
-        for i in 0..(128 + 128 * CAPACITY) {
+        for i in 0..(256 + 256 * CAPACITY) {
             assert_eq!(bits.rank0(i), i);
             assert_eq!(bits.rank1(i), 0);
             assert_eq!(bits.select0(i), i);
@@ -559,20 +564,20 @@ mod test {
     }
 
     #[test]
-    fn test_bitvec_single_level_full_n_ones() {
+    fn test_bitvec_single_level_full_ones() {
         let mut bits = BitVec::new();
-        for i in 0..(128 + 128 * CAPACITY) {
+        for i in 0..(256 + 256 * CAPACITY) {
             bits.insert(i, true);
 
             for j in 0..CAPACITY {
-                assert!(bits.root.lens[j] <= 256 * j as u32 + 256);
+                assert!(bits.root.lens[j] <= 512 * j as u32 + 512);
             }
         }
 
         let mut len = 0;
         let mut n_ones = 0;
         for i in 0..CAPACITY {
-            assert!(bits.root.lens[i] <= 256 * i as u32 + 256);
+            assert!(bits.root.lens[i] <= 512 * i as u32 + 512);
             if let Ptr::Leaf(leaf) = bits.root.ptrs[i].expand() {
                 len += leaf.len();
                 n_ones += leaf.num_ones();
@@ -583,7 +588,7 @@ mod test {
             }
         }
 
-        for i in 0..(128 + 128 * CAPACITY) {
+        for i in 0..(256 + 256 * CAPACITY) {
             assert_eq!(bits.rank0(i), 0);
             assert_eq!(bits.rank1(i), i);
             assert_eq!(bits.select1(i), i);
@@ -593,8 +598,8 @@ mod test {
     #[test]
     fn test_bitvec_single_level_half_zeros() {
         let mut bits = BitVec::new();
-        let mut expected = Vec::with_capacity(128 + 128 * CAPACITY);
-        for i in 0..(64 + 64 * CAPACITY) {
+        let mut expected = Vec::with_capacity(256 + 256 * CAPACITY);
+        for i in 0..(128 + 128 * CAPACITY) {
             bits.insert(i, true);
             bits.insert(i, false);
 
@@ -604,7 +609,7 @@ mod test {
             assert_eq!(expected, bits.root.to_vec());
 
             for j in 0..CAPACITY {
-                assert!(bits.root.lens[j] <= 256 * j as u32 + 256);
+                assert!(bits.root.lens[j] <= 512 * j as u32 + 512);
             }
         }
         // bits should be a palindrome of 0^k 1^k
@@ -612,7 +617,7 @@ mod test {
         let mut len = 0;
         let mut n_ones = 0;
         for i in 0..CAPACITY {
-            assert!(bits.root.lens[i] <= 256 * i as u32 + 256);
+            assert!(bits.root.lens[i] <= 512 * i as u32 + 512);
             if let Ptr::Leaf(leaf) = bits.root.ptrs[i].expand() {
                 len += leaf.len();
                 n_ones += leaf.num_ones();
@@ -623,7 +628,7 @@ mod test {
             }
         }
 
-        let len = 64 + 64 * CAPACITY;
+        let len = 128 + 128 * CAPACITY;
         for i in 0..(2 * len) {
             if i < len {
                 assert_eq!(bits.rank0(i), i);
@@ -659,30 +664,30 @@ mod test {
     #[test]
     fn test_node_split_1() {
         let mut node = Node {
-            lens: [256; CAPACITY],
-            n_ones: [256; CAPACITY],
+            lens: [512; CAPACITY],
+            n_ones: [512; CAPACITY],
             ptrs: [PackedPtr::null(); CAPACITY],
         };
 
         let ptrs = (0..CAPACITY)
             .map(|_| {
-                PackedPtr::from_leaf(Box::new(Bits256 {
-                    n_ones: [0, 64, 128, 192],
-                    len: 256,
-                    bits: [u64::max_value(); 4],
+                PackedPtr::from_leaf(Box::new(Bits512 {
+                    n_ones: u9x7::new([64, 128, 192, 256, 320, 384, 448]),
+                    len: 512,
+                    bits: [u64::max_value(); 8],
                 }))
             })
             .collect::<Vec<_>>();
         for i in 0..CAPACITY {
             node.ptrs[i] = ptrs[i];
-            node.lens[i] = 256 + i as u32 * 256;
-            node.n_ones[i] = 256 + i as u32 * 256;
+            node.lens[i] = 512 + i as u32 * 512;
+            node.n_ones[i] = 512 + i as u32 * 512;
         }
 
         let new = node.split();
         let expected = [
-            256, 512, 768, 1024, 1280, 1536, 1792, 2048, 2048, 2048, 2048,
-            2048, 2048, 2048, 2048, 2048,
+            512, 1024, 1536, 2048, 2560, 3072, 3584, 4096, 4096, 4096, 4096,
+            4096, 4096, 4096, 4096, 4096,
         ];
         debug_assert_eq!(new.lens, expected);
         debug_assert_eq!(node.lens, expected);
@@ -710,10 +715,10 @@ mod test {
 
     #[test]
     fn test_bitvec_multilevel_palindrome() {
-        assert!(2 * 2400 > CAPACITY * 256);
+        assert!(2 * 5000 > CAPACITY * 512);
         let mut bits = BitVec::new();
-        let mut expected = Vec::with_capacity(4800);
-        for i in 0..2400 {
+        let mut expected = Vec::with_capacity(10000);
+        for i in 0..5000 {
             bits.insert(i, true);
             expected.insert(i, true);
             assert_eq!(expected, bits.root.to_vec());
@@ -725,19 +730,19 @@ mod test {
         }
         // bits should be a palindrome of 0^k 1^k
 
-        for i in 0..2400 {
+        for i in 0..5000 {
             assert_eq!(bits.rank0(i), i);
             assert_eq!(bits.rank1(i), 0);
             assert_eq!(bits.get_bit(i), expected[i]);
         }
-        for i in 2400..4800 {
-            assert_eq!(bits.rank0(i), 2400);
-            assert_eq!(bits.rank1(i), i - 2400);
+        for i in 5000..10000 {
+            assert_eq!(bits.rank0(i), 5000);
+            assert_eq!(bits.rank1(i), i - 5000);
             assert_eq!(bits.get_bit(i), expected[i]);
         }
-        for i in 0..2400 {
+        for i in 0..5000 {
             assert_eq!(bits.select0(i), i);
-            assert_eq!(bits.select1(i), 2400 + i);
+            assert_eq!(bits.select1(i), 5000 + i);
         }
     }
 }
