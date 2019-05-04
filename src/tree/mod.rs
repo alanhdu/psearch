@@ -189,7 +189,7 @@ impl<L: Leaf> Node<L> {
             size += match ptr.expand() {
                 Ptr::None => 0,
                 Ptr::Leaf(leaf) => leaf.total_size(),
-                Ptr::Inner(_) => std::mem::size_of::<Node<L>>(),
+                Ptr::Inner(inner) => inner.total_size(),
             };
         }
         size
