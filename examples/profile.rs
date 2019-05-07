@@ -74,7 +74,7 @@ fn main() {
 
     match profile.ty {
         Ty::XFastInsert => {
-            let keys = (0..profile.size).map(|_| rng.gen()).collect::<Vec<_>>();
+            let keys: Vec<u32> = (0..profile.size).map(|_| rng.gen()).collect();
 
             dbg!("PROFILING");
             for _ in 0..profile.iters {
@@ -85,7 +85,7 @@ fn main() {
             }
         }
         Ty::XFastSuccssor => {
-            let mut xfast = XFastSet::new();
+            let mut xfast: XFastSet<u32> = XFastSet::new();
             while xfast.len() < profile.size {
                 xfast.insert(rng.gen());
             }

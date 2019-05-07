@@ -1,5 +1,5 @@
-#![allow(dead_code)]
 mod u32;
+mod u64;
 
 use std::collections::btree_map::Entry as BTreeEntry;
 use std::collections::BTreeMap;
