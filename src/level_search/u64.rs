@@ -7,6 +7,7 @@ impl<T> LevelSearchable<T> for u64 {
     type LSS = LevelSearch<T>;
     const MIN: u64 = 0;
     const MAX: u64 = u64::max_value();
+    const LEN: usize = 64;
 
     fn lss_new() -> LevelSearch<T> {
         LevelSearch::new()
@@ -29,6 +30,13 @@ impl<T> LevelSearchable<T> for u64 {
         key: Self,
     ) -> (u8, &Descendant<u64, T>) {
         lss.longest_descendant(key)
+    }
+
+    fn lss_longest_descendant_mut(
+        lss: &mut LevelSearch<T>,
+        key: Self,
+    ) -> (u8, &mut Descendant<u64, T>) {
+        lss.longest_descendant_mut(key)
     }
 }
 
@@ -255,6 +263,50 @@ impl<T> LevelSearch<T> {
                 (bytes[1], &desc)
             } else {
                 (bytes[0], &self.l0)
+            }
+        }
+    }
+
+    fn longest_descendant_mut(
+        &mut self,
+        key: u64,
+    ) -> (u8, &mut Descendant<u64, T>) {
+        let bytes = key.to_be_bytes();
+
+        let b1 = [bytes[0]];
+        let b2 = [bytes[0], bytes[1]];
+        let b3 = [bytes[0], bytes[1], bytes[2]];
+        let b4 = [bytes[0], bytes[1], bytes[2], bytes[3]];
+        let b5 = [bytes[0], bytes[1], bytes[2], bytes[3], bytes[4]];
+        let b6 = [bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]];
+        let b7 = [
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5],
+            bytes[6],
+        ];
+
+        if let Some(desc) = self.l4.get_mut(&b4) {
+            if let Some(desc) = self.l6.get_mut(&b6) {
+                if let Some(desc) = self.l7.get_mut(&b7) {
+                    (bytes[7], desc)
+                } else {
+                    (bytes[6], desc)
+                }
+            } else if let Some(desc) = self.l5.get_mut(&b5) {
+                (bytes[5], desc)
+            } else {
+                (bytes[4], desc)
+            }
+        } else {
+            if let Some(desc) = self.l2.get_mut(&b2) {
+                if let Some(desc) = self.l3.get_mut(&b3) {
+                    (bytes[3], desc)
+                } else {
+                    (bytes[2], desc)
+                }
+            } else if let Some(desc) = self.l1.get_mut(&b1) {
+                (bytes[1], desc)
+            } else {
+                (bytes[0], &mut self.l0)
             }
         }
     }

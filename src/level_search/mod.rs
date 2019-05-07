@@ -12,6 +12,7 @@ pub trait LevelSearchable<T>:
 
     const MIN: Self;
     const MAX: Self;
+    const LEN: usize;
 
     // No GATs, so can't implement LSS with a trait bound. Instead, add
     // LSS methods to this trait.
@@ -23,6 +24,11 @@ pub trait LevelSearchable<T>:
         lss: &Self::LSS,
         key: Self,
     ) -> (u8, &Descendant<Self, T>);
+
+    fn lss_longest_descendant_mut(
+        lss: &mut Self::LSS,
+        key: Self,
+    ) -> (u8, &mut Descendant<Self, T>);
 
     fn lss_min(lss: &Self::LSS) -> Option<&LNode<Self, T>> {
         let (_, desc) = Self::lss_longest_descendant(lss, Self::MIN);
@@ -65,7 +71,7 @@ impl<K: LevelSearchable<V>, V> Descendant<K, V> {
     }
 
     /// Find the predecessor of byte, assuming byte has at most 1 child
-    fn predecessor(&self, byte: u8) -> Option<&LNode<K, V>> {
+    pub(crate) fn predecessor(&self, byte: u8) -> Option<&LNode<K, V>> {
         self.bounds
             .range(0..=byte)
             .rev()
@@ -79,7 +85,7 @@ impl<K: LevelSearchable<V>, V> Descendant<K, V> {
     }
 
     /// Find the predecessor of byte, assuming byte has at most 1 child
-    fn predecessor_mut(&mut self, byte: u8) -> Option<&mut LNode<K, V>> {
+    pub(crate) fn predecessor_mut(&mut self, byte: u8) -> Option<&mut LNode<K, V>> {
         self.bounds
             .range_mut(0..=byte)
             .rev()
@@ -93,7 +99,7 @@ impl<K: LevelSearchable<V>, V> Descendant<K, V> {
     }
 
     /// Find the successor of byte, assuming byte has at most 1 child
-    fn successor_mut(&mut self, byte: u8) -> Option<&mut LNode<K, V>> {
+    pub(crate) fn successor_mut(&mut self, byte: u8) -> Option<&mut LNode<K, V>> {
         self.bounds
             .range_mut(byte..)
             .next()
@@ -106,7 +112,7 @@ impl<K: LevelSearchable<V>, V> Descendant<K, V> {
     }
 
     /// Find the successor of byte, assuming byte has at most 1 child
-    fn successor(&self, byte: u8) -> Option<&LNode<K, V>> {
+    pub(crate) fn successor(&self, byte: u8) -> Option<&LNode<K, V>> {
         self.bounds.range(byte..).next().map(|(&b, (min, max))| {
             if b == byte {
                 debug_assert_eq!(min, max);

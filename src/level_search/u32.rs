@@ -7,6 +7,7 @@ impl<T> LevelSearchable<T> for u32 {
     type LSS = LevelSearch<T>;
     const MIN: u32 = 0;
     const MAX: u32 = u32::max_value();
+    const LEN: usize = 32;
 
     fn lss_new() -> LevelSearch<T> {
         LevelSearch::new()
@@ -29,6 +30,13 @@ impl<T> LevelSearchable<T> for u32 {
         key: Self,
     ) -> (u8, &Descendant<u32, T>) {
         lss.longest_descendant(key)
+    }
+
+    fn lss_longest_descendant_mut(
+        lss: &mut LevelSearch<T>,
+        key: Self,
+    ) -> (u8, &mut Descendant<u32, T>) {
+        lss.longest_descendant_mut(key)
     }
 }
 
@@ -152,6 +160,21 @@ impl<T> LevelSearch<T> {
             (bytes[1], &desc)
         } else {
             (bytes[0], &self.l0)
+        }
+    }
+
+    fn longest_descendant_mut(&mut self, key: u32) -> (u8, &mut Descendant<u32, T>) {
+        let bytes = key.to_be_bytes();
+        if let Some(desc) = self.l2.get_mut(&[bytes[0], bytes[1]]) {
+            if let Some(desc) = self.l3.get_mut(&[bytes[0], bytes[1], bytes[2]]) {
+                (bytes[3], desc)
+            } else {
+                (bytes[2], desc)
+            }
+        } else if let Some(desc) = self.l1.get_mut(&[bytes[0]]) {
+            (bytes[1], desc)
+        } else {
+            (bytes[0], &mut self.l0)
         }
     }
 }
