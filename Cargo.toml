@@ -15,7 +15,7 @@ proptest = "0.9"
 structopt = "0.2"
 
 [[bench]]
-name = "xfast_set"
+name = "level_search"
 harness = false
 
 [[bench]]
