@@ -3,7 +3,8 @@ use std::ops::{Bound, RangeBounds};
 
 use fnv::FnvHashMap as HashMap;
 
-use super::{traits::LNode, LevelSearchable};
+use super::LevelSearchable;
+use crate::level_search::LNode;
 
 #[derive(Default)]
 pub struct XFastMap<K: LevelSearchable<V>, V> {
@@ -162,8 +163,8 @@ impl<K: LevelSearchable<V>, V> XFastMap<K, V> {
 
 #[cfg(test)]
 mod test {
+    use crate::level_search::LevelSearchable;
     use super::*;
-    use super::super::traits::LevelSearchable;
 
     #[test]
     fn test_xfast_iter() {

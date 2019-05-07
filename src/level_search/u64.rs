@@ -6,7 +6,7 @@ use super::{Descendant, LNode, LevelSearchable};
 impl<T> LevelSearchable<T> for u64 {
     type LSS = LevelSearch<T>;
     const MIN: u64 = 0;
-    const MAX: u64 = 0;
+    const MAX: u64 = u64::max_value();
 
     fn lss_new() -> LevelSearch<T> {
         LevelSearch::new()

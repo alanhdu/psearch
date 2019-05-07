@@ -4,5 +4,6 @@ pub mod xfast;
 pub mod yfast;
 
 pub(crate) mod array;
+pub(crate) mod level_search;
 pub(crate) mod tree;
 pub(crate) mod utils;

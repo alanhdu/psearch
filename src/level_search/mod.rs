@@ -1,7 +1,7 @@
 mod u32;
 mod u64;
 
-use std::collections::btree_map::Entry as BTreeEntry;
+use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::ptr;
 
@@ -130,7 +130,7 @@ impl<K: LevelSearchable<V>, V> Descendant<K, V> {
     /// Insert (byte, node), return whether it is a border node
     fn merge(&mut self, byte: u8, node: &mut LNode<K, V>) -> bool {
         match self.bounds.entry(byte) {
-            BTreeEntry::Vacant(v) => {
+            Entry::Vacant(v) => {
                 v.insert(unsafe {
                     (
                         ptr::NonNull::new_unchecked(node),
@@ -139,7 +139,7 @@ impl<K: LevelSearchable<V>, V> Descendant<K, V> {
                 });
                 true
             }
-            BTreeEntry::Occupied(mut o) => {
+            Entry::Occupied(mut o) => {
                 let (min, max) = o.get_mut();
                 if node.key < unsafe { min.as_ref() }.key {
                     *min = ptr::NonNull::from(node);
@@ -157,7 +157,7 @@ impl<K: LevelSearchable<V>, V> Descendant<K, V> {
     /// Remove the byte/node pair from the descendant pointers
     fn remove(&mut self, byte: u8, node: &LNode<K, V>) {
         match self.bounds.entry(byte) {
-            BTreeEntry::Occupied(mut o) => {
+            Entry::Occupied(mut o) => {
                 let (min, max) = o.get_mut();
 
                 if ptr::eq(min.as_ptr(), node) {
@@ -179,11 +179,11 @@ impl<K: LevelSearchable<V>, V> Descendant<K, V> {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct LNode<K: LevelSearchable<V>, V> {
-    pub(super) key: K,
-    pub(super) value: V,
+    pub(crate) key: K,
+    pub(crate) value: V,
 
-    pub(super) prev: *mut LNode<K, V>,
-    pub(super) next: *mut LNode<K, V>,
+    pub(crate) prev: *mut LNode<K, V>,
+    pub(crate) next: *mut LNode<K, V>,
 }
 
 impl<V, K: LevelSearchable<V>> LNode<K, V> {
