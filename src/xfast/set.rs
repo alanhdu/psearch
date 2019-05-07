@@ -1,13 +1,14 @@
 use super::map::XFastMap;
 use std::ops::RangeBounds;
 
-#[derive(Default)]
-pub struct XFastSet {
-    map: XFastMap<()>,
+use super::LevelSearchable;
+
+pub struct XFastSet<K: LevelSearchable<()>> {
+    map: XFastMap<K, ()>,
 }
 
-impl XFastSet {
-    pub fn new() -> XFastSet {
+impl<K: LevelSearchable<()>> XFastSet<K> {
+    pub fn new() -> XFastSet<K> {
         XFastSet {
             map: XFastMap::new(),
         }
@@ -27,7 +28,7 @@ impl XFastSet {
     }
 
     /// Return a reference to the value corresponding to the key
-    pub fn contains(&self, key: u32) -> bool {
+    pub fn contains(&self, key: K) -> bool {
         self.map.contains_key(key)
     }
 
@@ -35,33 +36,33 @@ impl XFastSet {
     ///
     /// If the set does not have the value present, return True.
     /// Otherwise, return False.
-    pub fn insert(&mut self, key: u32) -> bool {
+    pub fn insert(&mut self, key: K) -> bool {
         self.map.insert(key, ()).is_none()
     }
 
     /// Remove a value to the set.
     ///
     /// Returns whether the key is in the set
-    pub fn remove(&mut self, key: u32) -> bool {
+    pub fn remove(&mut self, key: K) -> bool {
         self.map.remove(key).is_some()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = u32> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = K> + '_ {
         self.map.iter().map(|k| k.0)
     }
 
     pub fn range<'a>(
         &'a self,
-        range: impl RangeBounds<u32> + 'a,
-    ) -> impl Iterator<Item = u32> + 'a {
+        range: impl RangeBounds<K> + 'a,
+    ) -> impl Iterator<Item = K> + 'a {
         self.map.range(range).map(|k| k.0)
     }
 
-    pub fn predecessor(&self, key: u32) -> Option<u32> {
+    pub fn predecessor(&self, key: K) -> Option<K> {
         self.map.predecessor(key).map(|x| x.0)
     }
 
-    pub fn successor(&self, key: u32) -> Option<u32> {
+    pub fn successor(&self, key: K) -> Option<K> {
         self.map.successor(key).map(|x| x.0)
     }
 }
