@@ -134,6 +134,9 @@ impl<T> LevelSearch<T> {
         }
         if let Entry::Occupied(mut o) = self.l3.entry(b3) {
             o.get_mut().remove(bytes[3], node);
+            if o.get().is_empty() {
+                o.remove();
+            }
         }
     }
 
