@@ -112,6 +112,53 @@ impl<K: LevelSearchable<BTreeMap<K, V>>, V> YFastMap<K, V> {
         }
     }
 
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        let (byte, desc) = K::lss_longest_descendant_mut(&mut self.lss, key);
+
+        let node_with_successor = if let Some(succ) = desc.successor_mut(byte) {
+            let min = succ.value.keys().next()?;
+            if *min <= key || succ.prev.is_null() || succ.key == key {
+                Some(succ)
+            } else if let Some(prev) = unsafe { succ.prev.as_mut() } {
+                debug_assert!(prev.value.keys().rev().next().unwrap() < min);
+                debug_assert!(prev.key <= key);
+                debug_assert!(succ.key > key);
+                Some(prev)
+            } else {
+                unreachable!();
+            }
+        } else if let Some(pred) = desc.predecessor_mut(byte) {
+            let max = pred.value.keys().rev().next()?;
+            if *max >= key || pred.next.is_null() || pred.key == key {
+                Some(pred)
+            } else if let Some(next) = unsafe { pred.next.as_mut() } {
+                debug_assert!(next.value.keys().next().unwrap() > max);
+                debug_assert!(next.key >= key);
+                debug_assert!(pred.key < key);
+                Some(next)
+            } else {
+                unreachable!();
+            }
+        } else {
+            None
+        };
+
+        if let Some(node) = node_with_successor {
+            let output = node.value.insert(key, value);
+            if node.is_full() {
+                let new = node.split();
+                self.insert_lss(new);
+            }
+            return output;
+        }
+
+        let mut node = Box::new(LNode::new(key, BTreeMap::new()));
+        node.value.insert(key, value);
+        self.insert_lss(node);
+
+        None
+    }
+
     fn insert_lss(&mut self, mut node: Box<LinkedBTree<K, V>>) {
         match self.map.entry(node.key) {
             HashEntry::Occupied(mut o) => {
@@ -124,60 +171,69 @@ impl<K: LevelSearchable<BTreeMap<K, V>>, V> YFastMap<K, V> {
         }
     }
 
-    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+    pub fn remove(&mut self, key: K) -> Option<V> {
         let (byte, desc) = K::lss_longest_descendant_mut(&mut self.lss, key);
-
-        if let Some(succ) = desc.successor_mut(byte) {
-            let min = succ.value.keys().next().unwrap();
+        let node_with_successor = if let Some(succ) = desc.successor_mut(byte) {
+            let min = succ.value.keys().next()?;
             if *min <= key || succ.prev.is_null() || succ.key == key {
-                let output = succ.value.insert(key, value);
-                if succ.is_full() {
-                    let new = succ.split();
-                    self.insert_lss(new);
-                }
-                return output;
+                Some(succ)
             } else if let Some(prev) = unsafe { succ.prev.as_mut() } {
                 debug_assert!(prev.value.keys().rev().next().unwrap() < min);
                 debug_assert!(prev.key <= key);
                 debug_assert!(succ.key > key);
-                let output = prev.value.insert(key, value);
-                if prev.is_full() {
-                    let new = prev.split();
-                    self.insert_lss(new);
-                }
-                return output;
+                Some(prev)
             } else {
                 unreachable!();
             }
         } else if let Some(pred) = desc.predecessor_mut(byte) {
-            let max = pred.value.keys().rev().next().unwrap();
+            let max = pred.value.keys().rev().next()?;
             if *max >= key || pred.next.is_null() || pred.key == key {
-                let output = pred.value.insert(key, value);
-                if pred.is_full() {
-                    let new = pred.split();
-                    self.insert_lss(new);
-                }
-                return output;
+                Some(pred)
             } else if let Some(next) = unsafe { pred.next.as_mut() } {
                 debug_assert!(next.value.keys().next().unwrap() > max);
                 debug_assert!(next.key >= key);
                 debug_assert!(pred.key < key);
-                let output = next.value.insert(key, value);
-                if next.is_full() {
-                    let new = next.split();
-                    self.insert_lss(new);
-                }
-                return output;
+                Some(next)
             } else {
                 unreachable!();
             }
+        } else {
+            None
+        };
+
+        let mut output = None;
+        let mut to_remove = None;
+        if let Some(node) = node_with_successor {
+            output = node.value.remove(&key);
+            if node.is_small() {
+                to_remove = Some(node.key);
+                let other = node.remove();
+                if other.is_small() {
+                    let new = other.split();
+                    self.insert_lss(new);
+                }
+            }
         }
 
-        let mut node = Box::new(LNode::new(key, BTreeMap::new()));
-        node.value.insert(key, value);
-        self.insert_lss(node);
+        if let Some(key) = to_remove {
+            self.remove_lss(key);
+        }
 
-        None
+        output
+    }
+
+    fn remove_lss(&mut self, key: K) {
+        if let Some(node) = self.map.remove(&key) {
+            K::lss_remove(&mut self.lss, &node);
+            unsafe {
+                if let Some(prev) = node.prev.as_mut() {
+                    prev.next = node.next;
+                }
+                if let Some(next) = node.next.as_mut() {
+                    next.prev = node.prev;
+                }
+            }
+        }
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (K, &V)> {
@@ -292,4 +348,21 @@ mod test {
         );
     }
 
+    #[test]
+    fn test_yfast_remove() {
+        let mut yfast = YFastMap::new();
+        for i in 0..2000u32 {
+            assert_eq!(yfast.insert(i, i), None);
+        }
+        for i in 0..1000u32 {
+            assert_eq!(yfast.remove(2 * i + 1), Some(2 * i + 1));
+        }
+
+        assert_eq!(yfast.remove(123213213), None);
+
+        assert_eq!(
+            yfast.iter().map(|(k, v)| (k, *v)).collect::<Vec<_>>(),
+            (0..1000u32).map(|k| (2 * k, 2 * k)).collect::<Vec<_>>()
+        );
+    }
 }
