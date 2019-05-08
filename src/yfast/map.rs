@@ -56,15 +56,21 @@ impl<K: LevelSearchable<BTreeRange<K, V>>, V> YFastMap<K, V> {
 
     pub fn predecessor(&self, key: K) -> Option<(K, &V)> {
         let (byte, desc) = K::lss_longest_descendant(&self.lss, key);
+
         if let Some(pred) = desc.predecessor(byte) {
-            unsafe { pred.next.as_ref() }
-                .and_then(|next| next.value.predecessor(key))
-                .or_else(|| pred.value.predecessor(key))
+            if let Some(next) = unsafe { pred.next.as_ref() } {
+                if next.value.within_range(key) {
+                    return next.value.predecessor(key);
+                }
+            }
+            pred.value.predecessor(key)
         } else if let Some(succ) = desc.successor(byte) {
-            succ.value.predecessor(key).or_else(|| {
+            if succ.value.within_range(key) {
+                succ.value.predecessor(key)
+            } else {
                 unsafe { succ.prev.as_ref() }
                     .and_then(|prev| prev.value.predecessor(key))
-            })
+            }
         } else {
             None
         }
@@ -73,14 +79,19 @@ impl<K: LevelSearchable<BTreeRange<K, V>>, V> YFastMap<K, V> {
     pub fn successor(&self, key: K) -> Option<(K, &V)> {
         let (byte, desc) = K::lss_longest_descendant(&self.lss, key);
         if let Some(pred) = desc.predecessor(byte) {
-            pred.value.successor(key).or_else(|| {
+            if pred.value.within_range(key) {
+                pred.value.successor(key)
+            } else {
                 unsafe { pred.next.as_ref() }
                     .and_then(|next| next.value.successor(key))
-            })
+            }
         } else if let Some(succ) = desc.successor(byte) {
-            unsafe { succ.prev.as_ref() }
-                .and_then(|prev| prev.value.successor(key))
-                .or_else(|| succ.value.successor(key))
+            if let Some(prev) = unsafe { succ.prev.as_ref() } {
+                if prev.value.within_range(key) {
+                    return prev.value.successor(key);
+                }
+            }
+            succ.value.successor(key)
         } else {
             None
         }
@@ -88,15 +99,21 @@ impl<K: LevelSearchable<BTreeRange<K, V>>, V> YFastMap<K, V> {
 
     pub fn contains_key(&self, key: K) -> bool {
         if let Some(pred) = K::lss_predecessor(&self.lss, key) {
-            pred.value.contains_key(key)
-                || unsafe { pred.next.as_ref() }
+            if pred.value.within_range(key) {
+                pred.value.contains_key(key)
+            } else {
+                unsafe { pred.next.as_ref() }
                     .map(|next| next.value.contains_key(key))
                     .unwrap_or(false)
+            }
         } else if let Some(succ) = K::lss_successor(&self.lss, key) {
-            succ.value.contains_key(key)
-                || unsafe { succ.prev.as_ref() }
+            if succ.value.within_range(key) {
+                succ.value.contains_key(key)
+            } else {
+                unsafe { succ.prev.as_ref() }
                     .map(|next| next.value.contains_key(key))
                     .unwrap_or(false)
+            }
         } else {
             false
         }
@@ -299,7 +316,9 @@ mod test {
         let mut yfast = YFastMap::new();
 
         for i in 0..1000u32 {
+            assert!(!yfast.contains_key(2 * i));
             assert_eq!(yfast.insert(2 * i, i), None);
+            assert!(yfast.contains_key(2 * i));
         }
         yfast.insert(u32::max_value(), 0);
 

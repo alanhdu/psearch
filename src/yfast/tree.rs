@@ -56,8 +56,12 @@ impl<K: LevelSearchable<BTreeRange<K, V>>, V> BTreeRange<K, V> {
         self.btree.iter()
     }
 
+    pub(super) fn within_range(&self, key: K) -> bool {
+        self.min <= key && key <= self.max
+    }
+
     pub(super) fn contains_key(&self, key: K) -> bool {
-        self.min <= key && key <= self.max && self.btree.contains_key(&key)
+        self.within_range(key) && self.btree.contains_key(&key)
     }
 
     pub(super) fn predecessor(&self, key: K) -> Option<(K, &V)> {
