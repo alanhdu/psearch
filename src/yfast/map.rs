@@ -98,7 +98,8 @@ impl<K: LevelSearchable<BTreeRange<K, V>>, V> YFastMap<K, V> {
     }
 
     pub fn contains_key(&self, key: K) -> bool {
-        if let Some(pred) = K::lss_predecessor(&self.lss, key) {
+        let (byte, desc) = K::lss_longest_descendant(&self.lss, key);
+        if let Some(pred) = desc.predecessor(byte) {
             if pred.value.within_range(key) {
                 pred.value.contains_key(key)
             } else {
@@ -106,7 +107,7 @@ impl<K: LevelSearchable<BTreeRange<K, V>>, V> YFastMap<K, V> {
                     .map(|next| next.value.contains_key(key))
                     .unwrap_or(false)
             }
-        } else if let Some(succ) = K::lss_successor(&self.lss, key) {
+        } else if let Some(succ) = desc.successor(byte) {
             if succ.value.within_range(key) {
                 succ.value.contains_key(key)
             } else {
