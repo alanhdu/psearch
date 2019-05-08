@@ -134,22 +134,22 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench(
         "random_contains_u32",
         ParameterizedBenchmark::new(
-            "XFastSet",
-            random_contains!(XFastSet<u32>, false),
+            "YFastSet",
+            random_contains!(YFastSet<u32>, false),
             vec![100, 1000, 10000, 100000, 1_000_000, 10_000_000],
         )
-        .with_function("YFastSet", random_contains!(YFastSet<u32>, false))
         .with_function("BTreeSet", random_contains!(BTreeSet<u32>, true))
+        .with_function("HashSet", random_contains!(HashSet<u32>, true))
     );
     c.bench(
         "random_contains_u64",
         ParameterizedBenchmark::new(
-            "XFastSet",
-            random_contains!(XFastSet<u64>, false),
+            "YFastSet",
+            random_contains!(YFastSet<u64>, false),
             vec![100, 1000, 10000, 100000, 1_000_000, 10_000_000],
         )
-        .with_function("YFastSet", random_contains!(YFastSet<u64>, false))
-        .with_function("BTreeSet", random_contains!(BTreeSet<u64>, true))
+        .with_function("BTreeSet", random_contains!(BTreeSet<u32>, true))
+        .with_function("HashSet", random_contains!(HashSet<u64>, true))
     );
 
     macro_rules! successor {
@@ -167,7 +167,6 @@ fn criterion_benchmark(c: &mut Criterion) {
             gen!(set10_000, $set, 10000);
             gen!(set100_000, $set, 100_000);
             gen!(set1_000_000, $set, 1_000_000);
-            gen!(set10_000_000, $set, 10_000_000);
             move |b, &n| {
                 let set = match n {
                     100 => &set100,
@@ -175,7 +174,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                     10_000 => &set10_000,
                     100_000 => &set100_000,
                     1_000_000 => &set1_000_000,
-                    10_000_000 => &set10_000_000,
                     _ => unreachable!(),
                 };
                 let mut rng = SmallRng::from_seed([7; 16]);
@@ -196,9 +194,9 @@ fn criterion_benchmark(c: &mut Criterion) {
         ParameterizedBenchmark::new(
             "XFastSet",
             random_successor!(XFastSet<u32>, false),
-            vec![100, 1000, 10000, 100000, 1_000_000, 10_000_000],
+            vec![100, 1000, 10000, 100000, 1_000_000],
         )
-        .with_function("YFastSet", random_successor!(YFastSet<u32>, false))
+        .with_function("YFastSet", random_successor!(YFastSet<u64>, false))
         .with_function("BTreeSet", random_successor!(BTreeSet<u32>, true))
     );
     c.bench(
@@ -206,7 +204,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         ParameterizedBenchmark::new(
             "XFastSet",
             random_successor!(XFastSet<u64>, false),
-            vec![100, 1000, 10000, 100000, 1_000_000, 10_000_000],
+            vec![100, 1000, 10000, 100000, 1_000_000],
         )
         .with_function("YFastSet", random_successor!(YFastSet<u64>, false))
         .with_function("BTreeSet", random_successor!(BTreeSet<u64>, true))
