@@ -1,13 +1,10 @@
-use std::collections::BTreeMap;
+use super::{BTreeRange, LevelSearchable, YFastMap};
 
-use super::map::YFastMap;
-use super::LevelSearchable;
-
-pub struct YFastSet<K: LevelSearchable<BTreeMap<K, ()>>> {
+pub struct YFastSet<K: LevelSearchable<BTreeRange<K, ()>>> {
     map: YFastMap<K, ()>,
 }
 
-impl<K: LevelSearchable<BTreeMap<K, ()>>> YFastSet<K> {
+impl<K: LevelSearchable<BTreeRange<K, ()>>> YFastSet<K> {
     pub fn new() -> YFastSet<K> {
         YFastSet {
             map: YFastMap::new(),
