@@ -74,8 +74,7 @@ impl<K: LevelSearchable<V>, V> Descendant<K, V> {
     pub(crate) fn predecessor(&self, byte: u8) -> Option<&LNode<K, V>> {
         self.bounds
             .range(0..=byte)
-            .rev()
-            .next()
+            .next_back()
             .map(|(&b, (min, max))| {
                 if b == byte {
                     debug_assert_eq!(min, max);
@@ -88,8 +87,7 @@ impl<K: LevelSearchable<V>, V> Descendant<K, V> {
     pub(crate) fn predecessor_mut(&mut self, byte: u8) -> Option<&mut LNode<K, V>> {
         self.bounds
             .range_mut(0..=byte)
-            .rev()
-            .next()
+            .next_back()
             .map(|(&b, (min, max))| {
                 if b == byte {
                     debug_assert_eq!(min, max);

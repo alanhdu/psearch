@@ -58,8 +58,8 @@ impl<K: LevelSearchable<BTreeMap<K, V>>, V> YFastMap<K, V> {
         let (byte, desc) = K::lss_longest_descendant(&self.lss, key);
         if let Some(pred) = desc.predecessor(byte) {
             unsafe { pred.next.as_ref() }
-                .and_then(|next| next.value.range(..=key).rev().next())
-                .or_else(|| pred.value.range(..=key).rev().next())
+                .and_then(|next| next.value.range(..=key).next_back())
+                .or_else(|| pred.value.range(..=key).next_back())
                 .map(|(k, v)| (*k, v))
         } else if let Some(succ) = desc.successor(byte) {
             succ.value
@@ -67,7 +67,7 @@ impl<K: LevelSearchable<BTreeMap<K, V>>, V> YFastMap<K, V> {
                 .next_back()
                 .or_else(|| {
                     unsafe { succ.prev.as_ref() }
-                        .and_then(|prev| prev.value.range(..=key).rev().next())
+                        .and_then(|prev| prev.value.range(..=key).next_back())
                 })
                 .map(|(k, v)| (*k, v))
         } else {
@@ -120,7 +120,7 @@ impl<K: LevelSearchable<BTreeMap<K, V>>, V> YFastMap<K, V> {
             if *min <= key || succ.prev.is_null() || succ.key == key {
                 Some(succ)
             } else if let Some(prev) = unsafe { succ.prev.as_mut() } {
-                debug_assert!(prev.value.keys().rev().next().unwrap() < min);
+                debug_assert!(prev.value.keys().next_back().unwrap() < min);
                 debug_assert!(prev.key <= key);
                 debug_assert!(succ.key > key);
                 Some(prev)
@@ -128,7 +128,7 @@ impl<K: LevelSearchable<BTreeMap<K, V>>, V> YFastMap<K, V> {
                 unreachable!();
             }
         } else if let Some(pred) = desc.predecessor_mut(byte) {
-            let max = pred.value.keys().rev().next()?;
+            let max = pred.value.keys().next_back()?;
             if *max >= key || pred.next.is_null() || pred.key == key {
                 Some(pred)
             } else if let Some(next) = unsafe { pred.next.as_mut() } {
@@ -145,6 +145,9 @@ impl<K: LevelSearchable<BTreeMap<K, V>>, V> YFastMap<K, V> {
 
         if let Some(node) = node_with_successor {
             let output = node.value.insert(key, value);
+            if output.is_none() {
+                self.len += 1;
+            }
             if node.is_full() {
                 let new = node.split();
                 self.insert_lss(new);
@@ -178,7 +181,7 @@ impl<K: LevelSearchable<BTreeMap<K, V>>, V> YFastMap<K, V> {
             if *min <= key || succ.prev.is_null() || succ.key == key {
                 Some(succ)
             } else if let Some(prev) = unsafe { succ.prev.as_mut() } {
-                debug_assert!(prev.value.keys().rev().next().unwrap() < min);
+                debug_assert!(prev.value.keys().next_back().unwrap() < min);
                 debug_assert!(prev.key <= key);
                 debug_assert!(succ.key > key);
                 Some(prev)
@@ -186,7 +189,7 @@ impl<K: LevelSearchable<BTreeMap<K, V>>, V> YFastMap<K, V> {
                 unreachable!();
             }
         } else if let Some(pred) = desc.predecessor_mut(byte) {
-            let max = pred.value.keys().rev().next()?;
+            let max = pred.value.keys().next_back()?;
             if *max >= key || pred.next.is_null() || pred.key == key {
                 Some(pred)
             } else if let Some(next) = unsafe { pred.next.as_mut() } {
@@ -205,6 +208,9 @@ impl<K: LevelSearchable<BTreeMap<K, V>>, V> YFastMap<K, V> {
         let mut to_remove = None;
         if let Some(node) = node_with_successor {
             output = node.value.remove(&key);
+            if output.is_some() {
+                self.len -= 1;
+            }
             if node.is_small() {
                 to_remove = Some(node.key);
                 let other = node.remove();
