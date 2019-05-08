@@ -1,5 +1,7 @@
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{hash_map::Entry};
 use std::ptr;
+
+use fnv::FnvHashMap as HashMap;
 
 use super::{Descendant, LNode, LevelSearchable};
 
