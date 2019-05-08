@@ -184,8 +184,9 @@ impl<T> LevelSearch<T> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::collections::BTreeMap;
     use std::iter::FromIterator;
+
+    use crate::bytemap::ByteMap;
 
     #[test]
     fn test_levelsearch_insert_1() {
@@ -199,7 +200,7 @@ mod test {
 
         assert_eq!(
             lss.l0.bounds,
-            BTreeMap::from_iter(vec![(0xde, (nonnull, nonnull)),])
+            ByteMap::from_vec(vec![(0xde, (nonnull, nonnull)),])
         );
 
         assert_eq!(
@@ -207,7 +208,7 @@ mod test {
             HashMap::from_iter(vec![(
                 [0xde],
                 Descendant {
-                    bounds: BTreeMap::from_iter(vec![(
+                    bounds: ByteMap::from_vec(vec![(
                         0xad,
                         (nonnull, nonnull)
                     ),])
@@ -220,7 +221,7 @@ mod test {
             HashMap::from_iter(vec![(
                 [0xde, 0xad],
                 Descendant {
-                    bounds: BTreeMap::from_iter(vec![(
+                    bounds: ByteMap::from_vec(vec![(
                         0xbe,
                         (nonnull, nonnull)
                     ),])
@@ -233,7 +234,7 @@ mod test {
             HashMap::from_iter(vec![(
                 [0xde, 0xad, 0xbe],
                 Descendant {
-                    bounds: BTreeMap::from_iter(vec![(
+                    bounds: ByteMap::from_vec(vec![(
                         0xef,
                         (nonnull, nonnull)
                     ),])
@@ -276,7 +277,7 @@ mod test {
 
         assert_eq!(
             lss.l0.bounds,
-            BTreeMap::from_iter(vec![(0xba, (nn1, nn1)), (0xde, (nn2, nn4))])
+            ByteMap::from_vec(vec![(0xba, (nn1, nn1)), (0xde, (nn2, nn4))])
         );
         assert_eq!(
             lss.l1,
@@ -284,13 +285,13 @@ mod test {
                 (
                     [0xba],
                     Descendant {
-                        bounds: BTreeMap::from_iter(vec![(0xad, (nn1, nn1))])
+                        bounds: ByteMap::from_vec(vec![(0xad, (nn1, nn1))])
                     }
                 ),
                 (
                     [0xde],
                     Descendant {
-                        bounds: BTreeMap::from_iter(vec![(0xad, (nn2, nn4))])
+                        bounds: ByteMap::from_vec(vec![(0xad, (nn2, nn4))])
                     }
                 )
             ])
@@ -302,13 +303,13 @@ mod test {
                 (
                     [0xba, 0xad],
                     Descendant {
-                        bounds: BTreeMap::from_iter(vec![(0xf0, (nn1, nn1))])
+                        bounds: ByteMap::from_vec(vec![(0xf0, (nn1, nn1))])
                     }
                 ),
                 (
                     [0xde, 0xad],
                     Descendant {
-                        bounds: BTreeMap::from_iter(vec![
+                        bounds: ByteMap::from_vec(vec![
                             (0xbe, (nn2, nn2)),
                             (0xc0, (nn3, nn4)),
                         ])
@@ -322,19 +323,19 @@ mod test {
                 (
                     [0xba, 0xad, 0xf0],
                     Descendant {
-                        bounds: BTreeMap::from_iter(vec![(0x0d, (nn1, nn1))])
+                        bounds: ByteMap::from_vec(vec![(0x0d, (nn1, nn1))])
                     }
                 ),
                 (
                     [0xde, 0xad, 0xbe],
                     Descendant {
-                        bounds: BTreeMap::from_iter(vec![(0xef, (nn2, nn2))])
+                        bounds: ByteMap::from_vec(vec![(0xef, (nn2, nn2))])
                     }
                 ),
                 (
                     [0xde, 0xad, 0xc0],
                     Descendant {
-                        bounds: BTreeMap::from_iter(vec![
+                        bounds: ByteMap::from_vec(vec![
                             (0xde, (nn3, nn3)),
                             (0xfe, (nn4, nn4)),
                         ])
@@ -343,5 +344,4 @@ mod test {
             ])
         );
     }
-
 }

@@ -1,9 +1,9 @@
 mod u32;
 mod u64;
 
-use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
 use std::ptr;
+
+use crate::bytemap::{ByteMap, Entry};
 
 pub trait LevelSearchable<T>:
     std::hash::Hash + Copy + Clone + Eq + PartialEq + Ord + PartialOrd
@@ -56,13 +56,13 @@ type Ptr<K, V> = ptr::NonNull<LNode<K, V>>;
 
 #[derive(Debug, Default, Eq, PartialEq)]
 pub struct Descendant<K: LevelSearchable<V>, V> {
-    bounds: BTreeMap<u8, (Ptr<K, V>, Ptr<K, V>)>,
+    bounds: ByteMap<(Ptr<K, V>, Ptr<K, V>)>,
 }
 
 impl<K: LevelSearchable<V>, V> Descendant<K, V> {
     fn new() -> Descendant<K, V> {
         Descendant {
-            bounds: BTreeMap::new(),
+            bounds: ByteMap::new(),
         }
     }
 
@@ -72,46 +72,43 @@ impl<K: LevelSearchable<V>, V> Descendant<K, V> {
 
     /// Find the predecessor of byte, assuming byte has at most 1 child
     pub(crate) fn predecessor(&self, byte: u8) -> Option<&LNode<K, V>> {
-        self.bounds
-            .range(0..=byte)
-            .next_back()
-            .map(|(&b, (min, max))| {
-                if b == byte {
-                    debug_assert_eq!(min, max);
-                }
-                unsafe { max.as_ref() }
-            })
+        self.bounds.predecessor(byte).map(|(b, (min, max))| {
+            if b == byte {
+                debug_assert_eq!(min, max);
+            }
+            unsafe { max.as_ref() }
+        })
     }
 
     /// Find the predecessor of byte, assuming byte has at most 1 child
-    pub(crate) fn predecessor_mut(&mut self, byte: u8) -> Option<&mut LNode<K, V>> {
-        self.bounds
-            .range_mut(0..=byte)
-            .next_back()
-            .map(|(&b, (min, max))| {
-                if b == byte {
-                    debug_assert_eq!(min, max);
-                }
-                unsafe { max.as_mut() }
-            })
+    pub(crate) fn predecessor_mut(
+        &mut self,
+        byte: u8,
+    ) -> Option<&mut LNode<K, V>> {
+        self.bounds.predecessor_mut(byte).map(|(b, (min, max))| {
+            if b == byte {
+                debug_assert_eq!(min, max);
+            }
+            unsafe { max.as_mut() }
+        })
     }
 
     /// Find the successor of byte, assuming byte has at most 1 child
-    pub(crate) fn successor_mut(&mut self, byte: u8) -> Option<&mut LNode<K, V>> {
-        self.bounds
-            .range_mut(byte..)
-            .next()
-            .map(|(&b, (min, max))| {
-                if b == byte {
-                    debug_assert_eq!(min, max);
-                }
-                unsafe { min.as_mut() }
-            })
+    pub(crate) fn successor_mut(
+        &mut self,
+        byte: u8,
+    ) -> Option<&mut LNode<K, V>> {
+        self.bounds.successor_mut(byte).map(|(b, (min, max))| {
+            if b == byte {
+                debug_assert_eq!(min, max);
+            }
+            unsafe { min.as_mut() }
+        })
     }
 
     /// Find the successor of byte, assuming byte has at most 1 child
     pub(crate) fn successor(&self, byte: u8) -> Option<&LNode<K, V>> {
-        self.bounds.range(byte..).next().map(|(&b, (min, max))| {
+        self.bounds.successor(byte).map(|(b, (min, max))| {
             if b == byte {
                 debug_assert_eq!(min, max);
             }
@@ -134,7 +131,7 @@ impl<K: LevelSearchable<V>, V> Descendant<K, V> {
     /// Insert (byte, node), return whether it is a border node
     fn merge(&mut self, byte: u8, node: &mut LNode<K, V>) -> bool {
         match self.bounds.entry(byte) {
-            Entry::Vacant(v) => {
+            Entry::Vacant(mut v) => {
                 v.insert(unsafe {
                     (
                         ptr::NonNull::new_unchecked(node),
