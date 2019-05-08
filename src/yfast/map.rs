@@ -157,6 +157,7 @@ impl<K: LevelSearchable<BTreeMap<K, V>>, V> YFastMap<K, V> {
 
         let mut node = Box::new(LNode::new(key, BTreeMap::new()));
         node.value.insert(key, value);
+        self.len += 1;
         self.insert_lss(node);
 
         None
