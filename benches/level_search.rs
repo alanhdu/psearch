@@ -88,7 +88,8 @@ fn criterion_benchmark(c: &mut Criterion) {
         .sample_size(10),
     );
 
-    macro_rules! gen {
+
+    macro_rules! reference {
         ($rng: expr, true) => {
             &$rng
         };
@@ -96,15 +97,37 @@ fn criterion_benchmark(c: &mut Criterion) {
             $rng
         };
     }
+
+    macro_rules! gen {
+        ($name: ident, $set: ty, $n: expr) => {
+            let mut rng = SmallRng::from_seed([5; 16]);
+            let mut $name = <$set>::new();
+            while $name.len() < $n {
+                $name.insert(rng.gen());
+            }
+        }
+    }
+
     macro_rules! random_contains {
         ($set: ty, $ty: ident) => {{
-            |b, &n| {
-                let mut rng = SmallRng::from_seed([5; 16]);
-                let mut set = <$set>::new();
-                while set.len() < n {
-                    set.insert(rng.gen());
-                }
-                b.iter(|| black_box(set.contains(gen!(rng.gen(), $ty))));
+            gen!(set100, $set, 100);
+            gen!(set1000, $set, 1000);
+            gen!(set10_000, $set, 10000);
+            gen!(set100_000, $set, 100_000);
+            gen!(set1_000_000, $set, 1_000_000);
+            gen!(set10_000_000, $set, 10_000_000);
+            move |b, &n| {
+                let set = match n {
+                    100 => &set100,
+                    1000 => &set1000,
+                    10_000 => &set10_000,
+                    100_000 => &set100_000,
+                    1_000_000 => &set1_000_000,
+                    10_000_000 => &set10_000_000,
+                    _ => unreachable!(),
+                };
+                let mut rng = SmallRng::from_seed([7; 16]);
+                b.iter(|| black_box(set.contains(reference!(rng.gen(), $ty))));
             }
         }};
     }
@@ -139,18 +162,29 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
     macro_rules! random_successor {
         ($set: ty, $ty: ident) => {{
-            |b, &n| {
-                let mut rng = SmallRng::from_seed([5; 16]);
-                let mut set = <$set>::new();
-                while set.len() < n {
-                    set.insert(rng.gen());
-                }
+            gen!(set100, $set, 100);
+            gen!(set1000, $set, 1000);
+            gen!(set10_000, $set, 10000);
+            gen!(set100_000, $set, 100_000);
+            gen!(set1_000_000, $set, 1_000_000);
+            gen!(set10_000_000, $set, 10_000_000);
+            move |b, &n| {
+                let set = match n {
+                    100 => &set100,
+                    1000 => &set1000,
+                    10_000 => &set10_000,
+                    100_000 => &set100_000,
+                    1_000_000 => &set1_000_000,
+                    10_000_000 => &set10_000_000,
+                    _ => unreachable!(),
+                };
+                let mut rng = SmallRng::from_seed([7; 16]);
                 b.iter(|| {
                     // This is a hack for type inference to work automatically
                     // Rust should optimize out the `if false` branch
                     let key = rng.gen();
                     if false {
-                        set.contains(gen!(key, $ty));
+                        set.contains(reference!(key, $ty));
                     }
                     black_box(successor!(set, key, $ty))
                 });
