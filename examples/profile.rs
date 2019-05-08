@@ -8,6 +8,7 @@ use structopt::StructOpt;
 use psearch::{
     succinct::{LoudsTrie, SloudsTrie},
     xfast::XFastSet,
+    yfast::YFastSet,
 };
 
 #[derive(StructOpt)]
@@ -25,7 +26,12 @@ enum Ty {
     #[structopt(name = "xfast_insert")]
     XFastInsert,
     #[structopt(name = "xfast_successor")]
-    XFastSuccssor,
+    XFastSuccessor,
+
+    #[structopt(name = "yfast_insert")]
+    YFastInsert,
+    #[structopt(name = "yfast_successor")]
+    YFastSuccessor,
 
     #[structopt(name = "louds_insert")]
     LoudsInsert {
@@ -84,7 +90,7 @@ fn main() {
                 }
             }
         }
-        Ty::XFastSuccssor => {
+        Ty::XFastSuccessor => {
             let mut xfast: XFastSet<u32> = XFastSet::new();
             while xfast.len() < profile.size {
                 xfast.insert(rng.gen());
@@ -93,6 +99,28 @@ fn main() {
             dbg!("PROFILING");
             for _ in 0..profile.iters {
                 black_box(xfast.successor(rng.gen()));
+            }
+        }
+        Ty::YFastSuccessor => {
+            let mut yfast: YFastSet<u32> = YFastSet::new();
+            while yfast.len() < profile.size {
+                yfast.insert(rng.gen());
+            }
+
+            dbg!("PROFILING");
+            for _ in 0..profile.iters {
+                black_box(yfast.successor(rng.gen()));
+            }
+        }
+        Ty::YFastInsert => {
+            let keys: Vec<u32> = (0..profile.size).map(|_| rng.gen()).collect();
+
+            dbg!("PROFILING");
+            for _ in 0..profile.iters {
+                let mut yfast = YFastSet::new();
+                for key in &keys {
+                    black_box(yfast.insert(*key));
+                }
             }
         }
 
