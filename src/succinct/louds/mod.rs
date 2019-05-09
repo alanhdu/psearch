@@ -47,6 +47,10 @@ impl<T> LoudsTrie<T> {
             + self.values.total_size()
     }
 
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
+
     pub fn insert<K: AsRef<[u8]>>(&mut self, key: K, value: T) -> Option<T> {
         let mut cursor = Cursor {
             bit_pos: 0,

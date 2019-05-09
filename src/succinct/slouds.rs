@@ -191,6 +191,17 @@ impl<T: Clone> From<LoudsTrie<T>> for SLoudsTrie<T> {
     }
 }
 
+impl<T: Clone> From<&LoudsTrie<T>> for SLoudsTrie<T> {
+    fn from(louds: &LoudsTrie<T>) -> SLoudsTrie<T> {
+        SLoudsTrie {
+            trie: SBitVec::from_iter(louds.trie.iter()),
+            has_value: SBitVec::from_iter(louds.has_value.iter()),
+            bytes: Vec::from_iter(louds.bytes.iter()),
+            values: Vec::from_iter(louds.values.iter().cloned()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
