@@ -89,15 +89,21 @@ impl<K: LevelSearchable<BTreeRange<K, V>>, V> YFastMap<K, V> {
     pub fn contains_key(&self, key: K) -> bool {
         let (byte, desc) = K::lss_longest_descendant(&self.lss, key);
         if let Some(pred) = desc.predecessor(byte) {
-            pred.value.contains_key(key)
-                || unsafe { pred.next.as_ref() }
+            if pred.within_range(key) {
+                pred.value.contains_key(key)
+            } else {
+                unsafe { pred.next.as_ref() }
                     .map(|next| next.value.contains_key(key))
                     .unwrap_or(false)
+            }
         } else if let Some(succ) = desc.successor(byte) {
-            succ.value.contains_key(key)
-                || unsafe { succ.prev.as_ref() }
+            if succ.within_range(key) {
+                succ.value.contains_key(key)
+            } else {
+                unsafe { succ.prev.as_ref() }
                     .map(|next| next.value.contains_key(key))
                     .unwrap_or(false)
+            }
         } else {
             false
         }

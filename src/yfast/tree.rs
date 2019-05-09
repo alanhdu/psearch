@@ -150,4 +150,8 @@ impl<K: LevelSearchable<BTreeRange<K, V>>, V> LinkedBTree<K, V> {
         }
         unreachable!();
     }
+
+    pub(super) fn within_range(&self, key: K) -> bool {
+        self.value.min <= key && key <= self.value.max
+    }
 }
