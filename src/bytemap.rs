@@ -444,6 +444,58 @@ impl<T> ByteMap<T> {
         }
     }
 
+    pub fn get(&self, key: u8) -> Option<&T> {
+        let len = self.len as usize;
+        match self.node {
+            Node::N4(ref n) => {
+                for (i, byte) in n.bytes[..len].iter().cloned().enumerate() {
+                    if byte == key {
+                        return n.values[i].as_ref();
+                    }
+                }
+                None
+            }
+            Node::N16(ref n) => {
+                for (i, byte) in n.bytes[..len].iter().cloned().enumerate() {
+                    if byte == key {
+                        return n.values[i].as_ref();
+                    }
+                }
+                None
+            }
+            Node::N48(ref n) => {
+                n.values[n.positions[key as usize] as usize].as_ref()
+            }
+            Node::N256(ref n) => n.values[key as usize].as_ref(),
+        }
+    }
+
+    pub fn get_mut(&mut self, key: u8) -> Option<&mut T> {
+        let len = self.len as usize;
+        match self.node {
+            Node::N4(ref mut n) => {
+                for (i, byte) in n.bytes[..len].iter().cloned().enumerate() {
+                    if byte == key {
+                        return n.values[i].as_mut();
+                    }
+                }
+                None
+            }
+            Node::N16(ref mut n) => {
+                for (i, byte) in n.bytes[..len].iter().cloned().enumerate() {
+                    if byte == key {
+                        return n.values[i].as_mut();
+                    }
+                }
+                None
+            }
+            Node::N48(ref mut n) => {
+                n.values[n.positions[key as usize] as usize].as_mut()
+            }
+            Node::N256(ref mut n) => n.values[key as usize].as_mut(),
+        }
+    }
+
     pub fn entry(&mut self, key: u8) -> Entry<'_, T> {
         // Resize if necessary
         match (&self.node, self.len) {
@@ -540,7 +592,8 @@ mod test {
 
     #[test]
     fn test_bytemap_insert() {
-        let keys: Vec<u8> = vec![38, 0, 1, 39, 2, 40, 3, 4, 5, 6, 86, 7, 8, 9, 10, 11, 0];
+        let keys: Vec<u8> =
+            vec![38, 0, 1, 39, 2, 40, 3, 4, 5, 6, 86, 7, 8, 9, 10, 11, 0];
 
         let mut map = ByteMap::new();
         let mut expected = BTreeSet::new();
