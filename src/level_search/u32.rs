@@ -1,4 +1,4 @@
-use std::collections::{hash_map::Entry};
+use std::collections::hash_map::Entry;
 use std::ptr;
 
 use fnv::FnvHashMap as HashMap;
@@ -99,12 +99,9 @@ impl<T> LevelSearch<T> {
             match entry {
                 Entry::Vacant(v) => {
                     let mut desc = Descendant::new();
-                    desc.bounds.insert(byte, unsafe {
-                        (
-                            ptr::NonNull::new_unchecked(node),
-                            ptr::NonNull::new_unchecked(node),
-                        )
-                    });
+                    let ptr = ptr::NonNull::from(node);
+                    desc.maxes.insert(byte, ptr);
+                    desc.min = Some((byte, ptr));
                     v.insert(desc);
                     true
                 }
@@ -165,10 +162,14 @@ impl<T> LevelSearch<T> {
         }
     }
 
-    fn longest_descendant_mut(&mut self, key: u32) -> (u8, &mut Descendant<u32, T>) {
+    fn longest_descendant_mut(
+        &mut self,
+        key: u32,
+    ) -> (u8, &mut Descendant<u32, T>) {
         let bytes = key.to_be_bytes();
         if let Some(desc) = self.l2.get_mut(&[bytes[0], bytes[1]]) {
-            if let Some(desc) = self.l3.get_mut(&[bytes[0], bytes[1], bytes[2]]) {
+            if let Some(desc) = self.l3.get_mut(&[bytes[0], bytes[1], bytes[2]])
+            {
                 (bytes[3], desc)
             } else {
                 (bytes[2], desc)
@@ -199,8 +200,11 @@ mod test {
         let nonnull = ptr::NonNull::new(ptr).unwrap();
 
         assert_eq!(
-            lss.l0.bounds,
-            ByteMap::from_vec(vec![(0xde, (nonnull, nonnull)),])
+            lss.l0,
+            Descendant {
+                min: Some((0xde, nonnull)),
+                maxes: ByteMap::from_vec(vec![(0xde, nonnull)])
+            }
         );
 
         assert_eq!(
@@ -208,10 +212,8 @@ mod test {
             HashMap::from_iter(vec![(
                 [0xde],
                 Descendant {
-                    bounds: ByteMap::from_vec(vec![(
-                        0xad,
-                        (nonnull, nonnull)
-                    ),])
+                    min: Some((0xad, nonnull)),
+                    maxes: ByteMap::from_vec(vec![(0xad, nonnull)])
                 }
             )])
         );
@@ -221,10 +223,8 @@ mod test {
             HashMap::from_iter(vec![(
                 [0xde, 0xad],
                 Descendant {
-                    bounds: ByteMap::from_vec(vec![(
-                        0xbe,
-                        (nonnull, nonnull)
-                    ),])
+                    min: Some((0xbe, nonnull)),
+                    maxes: ByteMap::from_vec(vec![(0xbe, nonnull)])
                 }
             )])
         );
@@ -234,10 +234,8 @@ mod test {
             HashMap::from_iter(vec![(
                 [0xde, 0xad, 0xbe],
                 Descendant {
-                    bounds: ByteMap::from_vec(vec![(
-                        0xef,
-                        (nonnull, nonnull)
-                    ),])
+                    min: Some((0xef, nonnull)),
+                    maxes: ByteMap::from_vec(vec![(0xef, nonnull)])
                 }
             )])
         );
@@ -276,8 +274,11 @@ mod test {
         let nn4 = ptr::NonNull::new(p4).unwrap();
 
         assert_eq!(
-            lss.l0.bounds,
-            ByteMap::from_vec(vec![(0xba, (nn1, nn1)), (0xde, (nn2, nn4))])
+            lss.l0,
+            Descendant {
+                min: Some((0xba, nn1)),
+                maxes: ByteMap::from_vec(vec![(0xba, nn1), (0xde, nn4)])
+            }
         );
         assert_eq!(
             lss.l1,
@@ -285,13 +286,15 @@ mod test {
                 (
                     [0xba],
                     Descendant {
-                        bounds: ByteMap::from_vec(vec![(0xad, (nn1, nn1))])
+                        min: Some((0xad, nn1)),
+                        maxes: ByteMap::from_vec(vec![(0xad, nn1)])
                     }
                 ),
                 (
                     [0xde],
                     Descendant {
-                        bounds: ByteMap::from_vec(vec![(0xad, (nn2, nn4))])
+                        min: Some((0xad, nn2)),
+                        maxes: ByteMap::from_vec(vec![(0xad, nn4)])
                     }
                 )
             ])
@@ -303,15 +306,17 @@ mod test {
                 (
                     [0xba, 0xad],
                     Descendant {
-                        bounds: ByteMap::from_vec(vec![(0xf0, (nn1, nn1))])
+                        min: Some((0xf0, nn1)),
+                        maxes: ByteMap::from_vec(vec![(0xf0, nn1)])
                     }
                 ),
                 (
                     [0xde, 0xad],
                     Descendant {
-                        bounds: ByteMap::from_vec(vec![
-                            (0xbe, (nn2, nn2)),
-                            (0xc0, (nn3, nn4)),
+                        min: Some((0xbe, nn2)),
+                        maxes: ByteMap::from_vec(vec![
+                            (0xbe, nn2),
+                            (0xc0, nn4),
                         ])
                     }
                 )
@@ -323,21 +328,24 @@ mod test {
                 (
                     [0xba, 0xad, 0xf0],
                     Descendant {
-                        bounds: ByteMap::from_vec(vec![(0x0d, (nn1, nn1))])
+                        min: Some((0x0d, nn1)),
+                        maxes: ByteMap::from_vec(vec![(0x0d, nn1)])
                     }
                 ),
                 (
                     [0xde, 0xad, 0xbe],
                     Descendant {
-                        bounds: ByteMap::from_vec(vec![(0xef, (nn2, nn2))])
+                        min: Some((0xef, nn2)),
+                        maxes: ByteMap::from_vec(vec![(0xef, nn2)])
                     }
                 ),
                 (
                     [0xde, 0xad, 0xc0],
                     Descendant {
-                        bounds: ByteMap::from_vec(vec![
-                            (0xde, (nn3, nn3)),
-                            (0xfe, (nn4, nn4)),
+                        min: Some((0xde, nn3)),
+                        maxes: ByteMap::from_vec(vec![
+                            (0xde, nn3),
+                            (0xfe, nn4),
                         ])
                     }
                 ),

@@ -134,12 +134,9 @@ impl<T> LevelSearch<T> {
             match entry {
                 Entry::Vacant(v) => {
                     let mut desc = Descendant::new();
-                    desc.bounds.insert(byte, unsafe {
-                        (
-                            ptr::NonNull::new_unchecked(node),
-                            ptr::NonNull::new_unchecked(node),
-                        )
-                    });
+                    let ptr = ptr::NonNull::from(node);
+                    desc.maxes.insert(byte, ptr);
+                    desc.min = Some((byte, ptr));
                     v.insert(desc);
                     true
                 }

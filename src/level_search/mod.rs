@@ -56,28 +56,29 @@ type Ptr<K, V> = ptr::NonNull<LNode<K, V>>;
 
 #[derive(Debug, Default, Eq, PartialEq)]
 pub struct Descendant<K: LevelSearchable<V>, V> {
-    bounds: ByteMap<(Ptr<K, V>, Ptr<K, V>)>,
+    min: Option<(u8, Ptr<K, V>)>,
+    maxes: ByteMap<Ptr<K, V>>,
 }
 
 impl<K: LevelSearchable<V>, V> Descendant<K, V> {
     fn new() -> Descendant<K, V> {
         Descendant {
-            bounds: ByteMap::new(),
+            min: None,
+            maxes: ByteMap::new(),
         }
     }
 
+
     fn is_empty(&self) -> bool {
-        self.bounds.is_empty()
+        debug_assert_eq!(self.maxes.is_empty(), self.min.is_none());
+        self.maxes.is_empty()
     }
 
     /// Find the predecessor of byte, assuming byte has at most 1 child
     pub(crate) fn predecessor(&self, byte: u8) -> Option<&LNode<K, V>> {
-        self.bounds.predecessor(byte).map(|(b, (min, max))| {
-            if b == byte {
-                debug_assert_eq!(min, max);
-            }
-            unsafe { max.as_ref() }
-        })
+        self.maxes
+            .predecessor(byte)
+            .map(|(_, max)| unsafe { max.as_ref() })
     }
 
     /// Find the predecessor of byte, assuming byte has at most 1 child
@@ -85,12 +86,20 @@ impl<K: LevelSearchable<V>, V> Descendant<K, V> {
         &mut self,
         byte: u8,
     ) -> Option<&mut LNode<K, V>> {
-        self.bounds.predecessor_mut(byte).map(|(b, (min, max))| {
-            if b == byte {
-                debug_assert_eq!(min, max);
-            }
-            unsafe { max.as_mut() }
-        })
+        self.maxes
+            .predecessor_mut(byte)
+            .map(|(_, max)| unsafe { max.as_mut() })
+    }
+
+    /// Find the successor of byte, assuming byte has at most 1 child
+    pub(crate) fn successor(&self, byte: u8) -> Option<&LNode<K, V>> {
+        let (min_byte, min) = self.min.as_ref()?;
+        if byte <= *min_byte {
+            Some(unsafe { min.as_ref() })
+        } else {
+            let predecessor = self.predecessor(byte)?;
+            unsafe { predecessor.next.as_ref() }
+        }
     }
 
     /// Find the successor of byte, assuming byte has at most 1 child
@@ -98,22 +107,14 @@ impl<K: LevelSearchable<V>, V> Descendant<K, V> {
         &mut self,
         byte: u8,
     ) -> Option<&mut LNode<K, V>> {
-        self.bounds.successor_mut(byte).map(|(b, (min, max))| {
-            if b == byte {
-                debug_assert_eq!(min, max);
-            }
-            unsafe { min.as_mut() }
-        })
-    }
-
-    /// Find the successor of byte, assuming byte has at most 1 child
-    pub(crate) fn successor(&self, byte: u8) -> Option<&LNode<K, V>> {
-        self.bounds.successor(byte).map(|(b, (min, max))| {
-            if b == byte {
-                debug_assert_eq!(min, max);
-            }
-            unsafe { min.as_ref() }
-        })
+        let (min_byte, _) = self.min.as_mut()?;
+        if byte <= *min_byte {
+            // Cannot use min from above because of borrow checker error
+            return Some(unsafe { self.min.as_mut().unwrap().1.as_mut() })
+        } else {
+            let predecessor = self.predecessor_mut(byte)?;
+            unsafe { predecessor.next.as_mut() }
+        }
     }
 
     /// If this is the "lowest" Descendant matching the prefix, insert
@@ -130,20 +131,27 @@ impl<K: LevelSearchable<V>, V> Descendant<K, V> {
 
     /// Insert (byte, node), return whether it is a border node
     fn merge(&mut self, byte: u8, node: &mut LNode<K, V>) -> bool {
-        match self.bounds.entry(byte) {
+        match self.maxes.entry(byte) {
             Entry::Vacant(mut v) => {
-                v.insert(unsafe {
-                    (
-                        ptr::NonNull::new_unchecked(node),
-                        ptr::NonNull::new_unchecked(node),
-                    )
-                });
+                // Use this unsafe function instead of ptr::NonNull::from:
+                // so we don't consume node
+                let ptr = unsafe { ptr::NonNull::new_unchecked(node) };
+                v.insert(ptr);
+                if self
+                    .min
+                    .map(|(_, k)| unsafe { k.as_ref() }.key > node.key)
+                    .unwrap_or(true)
+                {
+                    self.min = Some((byte, ptr));
+                }
                 true
             }
             Entry::Occupied(mut o) => {
-                let (min, max) = o.get_mut();
+                let max = o.get_mut();
+                let min = self.min.as_ref().unwrap().1;
+
                 if node.key < unsafe { min.as_ref() }.key {
-                    *min = ptr::NonNull::from(node);
+                    self.min = Some((byte, ptr::NonNull::from(node)));
                     true
                 } else if node.key > unsafe { max.as_ref() }.key {
                     *max = ptr::NonNull::from(node);
@@ -157,14 +165,21 @@ impl<K: LevelSearchable<V>, V> Descendant<K, V> {
 
     /// Remove the byte/node pair from the descendant pointers
     fn remove(&mut self, byte: u8, node: &LNode<K, V>) {
-        match self.bounds.entry(byte) {
+        match self.maxes.entry(byte) {
             Entry::Occupied(mut o) => {
-                let (min, max) = o.get_mut();
+                let max = o.get_mut();
+                let min = &mut self.min.as_mut().unwrap().1;
 
                 if ptr::eq(min.as_ptr(), node) {
                     if ptr::eq(max.as_ptr(), node) {
                         // (min == max == node) => node is only entry
                         o.remove();
+                        self.min =
+                            ptr::NonNull::new(node.next).and_then(|next| {
+                                self.maxes
+                                    .successor(byte)
+                                    .map(|(byte, _)| (byte, next))
+                            });
                     } else {
                         *min =
                             unsafe { ptr::NonNull::new_unchecked(node.next) };
