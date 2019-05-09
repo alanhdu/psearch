@@ -6,7 +6,14 @@ use std::ptr;
 use crate::bytemap::{ByteMap, Entry};
 
 pub trait LevelSearchable<T>:
-    std::hash::Hash + Copy + Clone + Eq + PartialEq + Ord + PartialOrd
+    std::hash::Hash
+    + Copy
+    + Clone
+    + Eq
+    + PartialEq
+    + Ord
+    + PartialOrd
+    + std::fmt::Debug
 {
     type LSS;
 

@@ -1,6 +1,4 @@
-use std::collections::{
-    btree_map::Iter as BTreeIter, hash_map::Entry as HashEntry,
-};
+use std::collections::hash_map::Entry as HashEntry;
 
 use fnv::FnvHashMap as HashMap;
 
@@ -113,12 +111,10 @@ impl<K: LevelSearchable<BTreeRange<K, V>>, V> YFastMap<K, V> {
         let (byte, desc) = K::lss_longest_descendant_mut(&mut self.lss, key);
 
         let node_with_successor = if let Some(succ) = desc.successor_mut(byte) {
-            if succ.value.min <= key || succ.prev.is_null() {
+            if succ.min() <= key || succ.prev.is_null() {
                 Some(succ)
             } else if let Some(prev) = unsafe { succ.prev.as_mut() } {
-                debug_assert!(
-                    prev.value.keys().next_back().unwrap() < &succ.value.min
-                );
+                debug_assert!(prev.value.keys().last().unwrap() < succ.min());
                 debug_assert!(prev.key <= key);
                 debug_assert!(succ.key > key);
                 Some(prev)
@@ -126,12 +122,10 @@ impl<K: LevelSearchable<BTreeRange<K, V>>, V> YFastMap<K, V> {
                 unreachable!();
             }
         } else if let Some(pred) = desc.predecessor_mut(byte) {
-            if pred.value.max >= key || pred.next.is_null() {
+            if pred.max() >= key || pred.next.is_null() {
                 Some(pred)
             } else if let Some(next) = unsafe { pred.next.as_mut() } {
-                debug_assert!(
-                    next.value.keys().next().unwrap() > &pred.value.max
-                );
+                debug_assert!(next.value.keys().next().unwrap() > pred.max());
                 debug_assert!(next.key >= key);
                 debug_assert!(pred.key < key);
                 Some(next)
@@ -154,7 +148,7 @@ impl<K: LevelSearchable<BTreeRange<K, V>>, V> YFastMap<K, V> {
             return output;
         }
 
-        let mut node = Box::new(LNode::new(key, BTreeRange::new(key)));
+        let mut node = Box::new(LNode::new(key, BTreeRange::new()));
         node.value.insert(key, value);
         self.len += 1;
         self.insert_lss(node);
@@ -178,10 +172,10 @@ impl<K: LevelSearchable<BTreeRange<K, V>>, V> YFastMap<K, V> {
         let (byte, desc) = K::lss_longest_descendant_mut(&mut self.lss, key);
         let node_with_successor = if let Some(succ) = desc.successor_mut(byte) {
             let min = succ.value.keys().next()?;
-            if *min <= key || succ.prev.is_null() || succ.key == key {
+            if min <= key || succ.prev.is_null() || succ.key == key {
                 Some(succ)
             } else if let Some(prev) = unsafe { succ.prev.as_mut() } {
-                debug_assert!(prev.value.keys().next_back().unwrap() < min);
+                debug_assert!(prev.value.keys().last().unwrap() < min);
                 debug_assert!(prev.key <= key);
                 debug_assert!(succ.key > key);
                 Some(prev)
@@ -189,8 +183,8 @@ impl<K: LevelSearchable<BTreeRange<K, V>>, V> YFastMap<K, V> {
                 unreachable!();
             }
         } else if let Some(pred) = desc.predecessor_mut(byte) {
-            let max = pred.value.keys().next_back()?;
-            if *max >= key || pred.next.is_null() || pred.key == key {
+            let max = pred.value.keys().last()?;
+            if max >= key || pred.next.is_null() || pred.key == key {
                 Some(pred)
             } else if let Some(next) = unsafe { pred.next.as_mut() } {
                 debug_assert!(next.value.keys().next().unwrap() > max);
@@ -207,14 +201,14 @@ impl<K: LevelSearchable<BTreeRange<K, V>>, V> YFastMap<K, V> {
         let mut output = None;
         let mut to_remove = None;
         if let Some(node) = node_with_successor {
-            output = node.value.remove(key, node.key);
+            output = node.value.remove(key);
             if output.is_some() {
                 self.len -= 1;
             }
             if node.is_small() {
                 to_remove = Some(node.key);
                 let other = node.remove();
-                if other.is_small() {
+                if other.is_full() {
                     let new = other.split();
                     self.insert_lss(new);
                 }
@@ -251,12 +245,23 @@ impl<K: LevelSearchable<BTreeRange<K, V>>, V> YFastMap<K, V> {
     }
 }
 
-struct Iter<'a, K: LevelSearchable<BTreeRange<K, V>>, V> {
+struct Iter<'a, K, V>
+where
+    K: LevelSearchable<BTreeRange<K, V>>,
+{
     btree: Option<&'a LinkedBTree<K, V>>,
-    iter: Option<BTreeIter<'a, K, V>>,
+    iter: Option<
+        std::iter::Zip<
+            std::iter::Cloned<std::slice::Iter<'a, K>>,
+            std::slice::Iter<'a, V>,
+        >,
+    >,
 }
 
-impl<'a, K: LevelSearchable<BTreeRange<K, V>>, V> Iterator for Iter<'a, K, V> {
+impl<'a, K, V> Iterator for Iter<'a, K, V>
+where
+    K: LevelSearchable<BTreeRange<K, V>>,
+{
     type Item = (K, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -270,7 +275,7 @@ impl<'a, K: LevelSearchable<BTreeRange<K, V>>, V> Iterator for Iter<'a, K, V> {
                 return self.next();
             }
 
-            output.map(|(k, v)| (*k, v))
+            output.map(|(k, v)| (k, v))
         } else {
             None
         }
@@ -280,6 +285,25 @@ impl<'a, K: LevelSearchable<BTreeRange<K, V>>, V> Iterator for Iter<'a, K, V> {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_yfast() {
+        let items: Vec<u32> = vec![
+            2076770906, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+            16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 33,
+            34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
+            51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
+        ];
+        let mut yfast = YFastMap::new();
+        let mut expected = std::collections::BTreeSet::new();
+        for i in items.iter().cloned() {
+            assert_eq!(yfast.insert(i, i), None);
+            expected.insert(i);
+        }
+
+        let i = 31;
+        assert_eq!(yfast.predecessor(32), Some((i, &i)));
+    }
 
     #[test]
     fn test_yfast_get() {
