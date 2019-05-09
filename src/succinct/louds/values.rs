@@ -1,6 +1,6 @@
 use crate::tree::{Leaf, Tree};
 
-pub(super) type ValueTree<T> = Tree<Vec<T>>;
+pub(crate) type ValueTree<T> = Tree<Vec<T>>;
 
 impl<T> ValueTree<T> {
     pub(crate) fn get(&self, index: usize) -> &T {
@@ -13,9 +13,8 @@ impl<T> ValueTree<T> {
         std::mem::replace(&mut leaf[index], value)
     }
 
-    #[cfg(test)]
-    pub(crate) fn to_vec(&self) -> Vec<&T> {
-        (0..self.len()).map(|i| self.get(i)).collect::<Vec<_>>()
+    pub(crate) fn iter(&self) -> impl Iterator<Item=&T> + '_ {
+        self.iter_leaf().flat_map(|leaf| leaf.iter())
     }
 }
 

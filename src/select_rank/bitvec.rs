@@ -81,6 +81,11 @@ impl BitVec {
         self.root.ptrs[1] = ptr;
     }
 
+    fn approx_depth(&self) -> usize {
+        // leading zeros is approximately log2. Divide by 4 to get log_16
+        (64 - self.len().leading_zeros() as usize) / 4
+    }
+
     pub fn insert(&mut self, index: usize, bit: bool) {
         debug_assert!(index <= self.len());
         if index == 0 && self.len() == 0 {
@@ -93,9 +98,8 @@ impl BitVec {
 
         let mut index = index as u32;
 
-        // leading zeros is approximately log2. Divide by 4 to get log_16
         let mut stack: Vec<(*mut Node, usize)> =
-            Vec::with_capacity((64 - self.len().leading_zeros() as usize) / 4);
+            Vec::with_capacity(self.approx_depth());
         let mut node: &mut Node = &mut self.root;
 
         loop {
@@ -177,9 +181,51 @@ impl BitVec {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn to_vec(&self) -> Vec<bool> {
-        self.root.to_vec()
+    fn iter_leaf(&self) -> impl Iterator<Item = &Bits512> {
+        let mut current: &Node = &self.root;
+        let mut stack = Vec::with_capacity(self.approx_depth());
+        while let Ptr::Inner(next) = current.ptrs[0].expand() {
+            stack.push((current, 1usize));
+            current = next;
+        }
+        stack.push((current, 0usize));
+        std::iter::from_fn(move || {
+            while let Some((current, pos)) = stack.pop() {
+                match current.ptrs[pos].expand() {
+                    Ptr::None => {
+                        for i in pos..current.ptrs.len() {
+                            debug_assert!(current.ptrs[i].is_null());
+                        }
+                        continue;
+                    }
+                    Ptr::Leaf(leaf) => {
+                        if pos + 1 < current.ptrs.len() {
+                            stack.push((current, pos + 1));
+                        }
+                        return Some(leaf);
+                    }
+                    Ptr::Inner(mut inner) => {
+                        if pos + 1 < current.ptrs.len() {
+                            stack.push((current, pos + 1));
+                        }
+                        while let Ptr::Inner(new) = inner.ptrs[0].expand() {
+                            stack.push((inner, 1usize));
+                            inner = new;
+                        }
+
+                        if let Ptr::Leaf(leaf) = inner.ptrs[0].expand() {
+                            stack.push((inner, 1usize));
+                            return Some(leaf);
+                        }
+                    }
+                }
+            }
+            None
+        })
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = bool> + '_ {
+        self.iter_leaf().flat_map(|bits| bits.iter())
     }
 }
 
@@ -437,23 +483,6 @@ impl Node {
             }
         }
     }
-
-    #[cfg(test)]
-    fn to_vec(&self) -> Vec<bool> {
-        let mut vec = Vec::with_capacity(self.lens[CAPACITY - 1] as usize);
-        for ptr in &self.ptrs {
-            match ptr.expand() {
-                Ptr::None => {}
-                Ptr::Leaf(l) => {
-                    vec.append(&mut l.to_vec());
-                }
-                Ptr::Inner(inner) => {
-                    vec.append(&mut inner.to_vec());
-                }
-            }
-        }
-        vec
-    }
 }
 
 impl PackedPtr<Node, Bits512> {
@@ -606,7 +635,7 @@ mod test {
             expected.insert(i, true);
             expected.insert(i, false);
 
-            assert_eq!(expected, bits.root.to_vec());
+            assert_eq!(expected, bits.iter().collect::<Vec<_>>());
 
             for j in 0..CAPACITY {
                 assert!(bits.root.lens[j] <= 512 * j as u32 + 512);
@@ -657,7 +686,7 @@ mod test {
             bits.root.debug_assert_indices();
         }
 
-        assert_eq!(bits.root.to_vec(), expected);
+        assert_eq!(bits.iter().collect::<Vec<_>>(), expected);
         bits.root.debug_assert_indices();
     }
 
@@ -721,12 +750,12 @@ mod test {
         for i in 0..5000 {
             bits.insert(i, true);
             expected.insert(i, true);
-            assert_eq!(expected, bits.root.to_vec());
+            assert_eq!(expected, bits.iter().collect::<Vec<_>>());
 
             bits.insert(i, false);
             expected.insert(i, false);
-            assert_eq!(expected, bits.root.to_vec());
             assert_eq!(expected.len(), bits.len());
+            assert_eq!(expected, bits.iter().collect::<Vec<_>>());
         }
         // bits should be a palindrome of 0^k 1^k
 

@@ -5,10 +5,10 @@ mod bytes;
 mod values;
 
 pub struct LoudsTrie<T> {
-    trie: BitVec,
-    has_value: BitVec,
-    bytes: bytes::ByteTree,
-    values: values::ValueTree<T>,
+    pub(super) trie: BitVec,
+    pub(super) has_value: BitVec,
+    pub(super) bytes: bytes::ByteTree,
+    pub(super) values: values::ValueTree<T>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -188,7 +188,7 @@ mod test {
         }
 
         assert_eq!(
-            louds.has_value.to_vec(),
+            louds.has_value.iter().collect::<Vec<_>>(),
             vec![
                 false, true, false, false, // root, b, c, d
                 false, true, true, false, true, false, true, // level 2
@@ -196,7 +196,7 @@ mod test {
             ]
         );
         assert_eq!(
-            louds.trie.to_vec(),
+            louds.trie.iter().collect::<Vec<_>>(),
             vec![
                 true, true, true, false, // root
                 true, true, false, // b
@@ -212,7 +212,7 @@ mod test {
             ]
         );
         assert_eq!(
-            louds.bytes.to_vec(),
+            louds.bytes.iter().collect::<Vec<_>>(),
             vec![
                 b'b', b'c', b'd', b'e', b'f', b'g', b'h', b'i', b'j', b'k',
                 b'l', b'm', b'n', b'o', b'p', b'q'
@@ -220,7 +220,7 @@ mod test {
         );
 
         assert_eq!(
-            louds.values.to_vec(),
+            louds.values.iter().collect::<Vec<_>>(),
             vec![
                 &b'b', &b'f', &b'g', &b'i', &b'k', &b'l', &b'm', &b'n', &b'o',
                 &b'p', &b'q'

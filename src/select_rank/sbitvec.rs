@@ -31,15 +31,13 @@ impl SBitVec {
         self.len
     }
 
-    #[cfg(test)]
-    pub(crate) fn to_vec(&self) -> Vec<bool> {
+    pub fn iter(&self) -> impl Iterator<Item=bool> + '_ {
         (0..self.len())
-            .map(|i| {
+            .map(move |i| {
                 let block_index = i / 64;
                 let bit_index = i % 64;
                 self.blocks[block_index] & (1 << bit_index) != 0
             })
-            .collect::<Vec<_>>()
     }
 }
 

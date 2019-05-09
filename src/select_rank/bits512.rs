@@ -139,16 +139,12 @@ impl Bits512 {
         new
     }
 
-    #[cfg(test)]
-    pub(crate) fn to_vec(&self) -> Vec<bool> {
-        let mut v = Vec::with_capacity(self.len as usize);
-
-        for i in 0..self.len {
-            let upper = i as usize / 64;
+    pub fn iter(&self) -> impl Iterator<Item = bool> + '_ {
+        (0..self.len()).map(move |i| {
+            let upper = i / 64;
             let lower = i % 64;
-            v.push(self.bits[upper] & (1 << lower) != 0);
-        }
-        v
+            self.bits[upper] & (1 << lower) != 0
+        })
     }
 }
 
@@ -332,7 +328,7 @@ mod test {
                 bits512.insert_bit(order, bit);
                 bits.insert(order, bit);
 
-                prop_assert_eq!(&bits512.to_vec(), &bits);
+                prop_assert_eq!(&bits512.iter().collect::<Vec<_>>(), &bits);
 
                 for j in 1..7 {
                     prop_assert!(bits512.n_ones.get(j) >= bits512.n_ones.get(j - 1));

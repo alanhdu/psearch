@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::iter::FromIterator;
 
 use crate::select_rank::{SBitVec, SelectRank};
+use crate::succinct::LoudsTrie;
 
 /// A Static LOUDS trie
 #[derive(Debug, Eq, PartialEq)]
@@ -179,6 +180,17 @@ where
     }
 }
 
+impl<T: Clone> From<LoudsTrie<T>> for SloudsTrie<T> {
+    fn from(louds: LoudsTrie<T>) -> SloudsTrie<T> {
+        SloudsTrie {
+            trie: SBitVec::from_iter(louds.trie.iter()),
+            has_value: SBitVec::from_iter(louds.has_value.iter()),
+            bytes: Vec::from_iter(louds.bytes.iter()),
+            values: Vec::from_iter(louds.values.iter().cloned()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -202,7 +214,7 @@ mod test {
             SloudsTrie::from_iter(keys.iter().map(|k| (k, k[k.len() - 1])));
 
         assert_eq!(
-            slouds.trie.to_vec(),
+            slouds.trie.iter().collect::<Vec<_>>(),
             vec![
                 true, true, true, false, // root
                 true, true, false, // b
@@ -219,7 +231,7 @@ mod test {
         );
         // Remember to include the root!
         assert_eq!(
-            slouds.has_value.to_vec(),
+            slouds.has_value.iter().collect::<Vec<_>>(),
             vec![
                 false, true, false, false, false, true, true, false, true,
                 false, true, true, true, true, true, true, true
@@ -367,8 +379,8 @@ mod test {
     fn test_slouds_empty() {
         let slouds = SloudsTrie::from_iter([(b"", 0)].iter().cloned());
 
-        assert_eq!(slouds.trie.to_vec(), vec![false]);
-        assert_eq!(slouds.has_value.to_vec(), vec![true]);
+        assert_eq!(slouds.trie.iter().collect::<Vec<_>>(), vec![false]);
+        assert_eq!(slouds.has_value.iter().collect::<Vec<_>>(), vec![true]);
         assert_eq!(slouds.bytes, vec![]);
         assert_eq!(slouds.values, vec![0]);
 

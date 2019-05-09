@@ -28,6 +28,49 @@ impl<L: Leaf> Tree<L> {
         self.root.lens[CAPACITY - 1] as usize
     }
 
+    pub(crate) fn iter_leaf(&self) -> impl Iterator<Item = &L> + '_ {
+        let mut current: &Node<L> = &self.root;
+        let mut stack = Vec::new();
+        while let Ptr::Inner(next) = current.ptrs[0].expand() {
+            stack.push((current, 1usize));
+            current = next;
+        }
+        stack.push((current, 0usize));
+        std::iter::from_fn(move || {
+            while let Some((current, pos)) = stack.pop() {
+                match current.ptrs[pos].expand() {
+                    Ptr::None => {
+                        for i in pos..current.ptrs.len() {
+                            debug_assert!(current.ptrs[i].is_null());
+                        }
+                        continue;
+                    }
+                    Ptr::Leaf(leaf) => {
+                        if pos + 1 < current.ptrs.len() {
+                            stack.push((current, pos + 1));
+                        }
+                        return Some(leaf);
+                    }
+                    Ptr::Inner(mut inner) => {
+                        if pos + 1 < current.ptrs.len() {
+                            stack.push((current, pos + 1));
+                        }
+                        while let Ptr::Inner(new) = inner.ptrs[0].expand() {
+                            stack.push((inner, 1usize));
+                            inner = new;
+                        }
+
+                        if let Ptr::Leaf(leaf) = inner.ptrs[0].expand() {
+                            stack.push((inner, 1usize));
+                            return Some(leaf);
+                        }
+                    }
+                }
+            }
+            None
+        })
+    }
+
     pub(crate) fn get_leaf(&self, mut index: usize) -> (&L, usize) {
         debug_assert!(index < self.len());
         let mut node: &Node<L> = &self.root;

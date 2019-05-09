@@ -1,7 +1,7 @@
 use crate::tree::{Leaf, Tree};
 use crate::utils::binary_search_rank_equal;
 
-pub(super) type ByteTree = Tree<ByteLeaf>;
+pub(crate) type ByteTree = Tree<ByteLeaf>;
 
 impl ByteTree {
     pub(crate) fn child_number(
@@ -20,13 +20,19 @@ impl ByteTree {
         leaf.bytes[index]
     }
 
-    #[cfg(test)]
-    pub(crate) fn to_vec(&self) -> Vec<u8> {
-        (0..self.len()).map(|i| self.get(i)).collect::<Vec<_>>()
+    pub(crate) fn iter(&self) -> impl Iterator<Item = u8> + '_ {
+        let mut leaf = Some(self.get_leaf(0).0);
+        std::iter::from_fn(move || {
+            leaf.and_then(|l| {
+                std::mem::replace(&mut leaf, unsafe { l.next.as_ref() })
+            })
+        })
+        .flat_map(|leaf| leaf.bytes[..leaf.len as usize].iter())
+        .cloned()
     }
 }
 
-pub(super) struct ByteLeaf {
+pub(crate) struct ByteLeaf {
     len: u16,
     bytes: [u8; 510],
     next: *mut ByteLeaf,
