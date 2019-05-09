@@ -8,7 +8,7 @@ use criterion::{
 };
 use rand::{Rng, SeedableRng};
 
-use psearch::succinct::{LoudsTrie, SloudsTrie};
+use psearch::succinct::{LoudsTrie, SLoudsTrie};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let mut rng = rand::rngs::SmallRng::from_seed([5; 16]);
@@ -40,7 +40,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             vec![100, 1000, 10_000, 100_000, 1_000_000, 10_000_000],
         )
         .with_function("Slouds", move |b, &i| {
-            let slouds = SloudsTrie::from_iter(btree1.iter().take(i));
+            let slouds = SLoudsTrie::from_iter(btree1.iter().take(i));
             let mut rng = rand::rngs::SmallRng::from_seed([7; 16]);
             b.iter(|| {
                 let needle = rng.gen::<[u8; 8]>();
@@ -82,13 +82,13 @@ fn criterion_benchmark(c: &mut Criterion) {
             vec![100, 1000, 10_000, 100_000, 1_000_000, 10_000_000],
         )
         .with_function("Slouds", move |b, &i| {
-            // We current OoM on constructing the SloudsTrie.
+            // We current OoM on constructing the SLoudsTrie.
             // Need to improve BadTrie to improve this
             if i == 10_000_000 {
                 return;
             }
 
-            let slouds = SloudsTrie::from_iter(btree1.iter().take(i));
+            let slouds = SLoudsTrie::from_iter(btree1.iter().take(i));
             let mut rng = rand::rngs::SmallRng::from_seed([7; 16]);
             b.iter(|| {
                 let needle = rng.gen::<[u8; 32]>();

@@ -6,7 +6,7 @@ use crate::succinct::LoudsTrie;
 
 /// A Static LOUDS trie
 #[derive(Debug, Eq, PartialEq)]
-pub struct SloudsTrie<T> {
+pub struct SLoudsTrie<T> {
     trie: SBitVec,
     has_value: SBitVec,
     bytes: Vec<u8>,
@@ -28,7 +28,7 @@ impl Cursor {
     }
 }
 
-impl<T> SloudsTrie<T> {
+impl<T> SLoudsTrie<T> {
     pub fn total_size(&self) -> usize {
         std::mem::size_of::<Self>()
             + self.trie.total_size()
@@ -85,7 +85,7 @@ impl<T> SloudsTrie<T> {
     }
 }
 
-/// A really bad trie implementation to construct the SloudsTrie trie
+/// A really bad trie implementation to construct the SLoudsTrie trie
 struct BadTrie<T> {
     children: Vec<(u8, BadTrie<T>)>,
     value: Option<T>,
@@ -131,7 +131,7 @@ impl<T> BadTrie<T> {
     }
 }
 
-impl<T, K> FromIterator<(K, T)> for SloudsTrie<T>
+impl<T, K> FromIterator<(K, T)> for SLoudsTrie<T>
 where
     K: AsRef<[u8]>,
 {
@@ -171,7 +171,7 @@ where
             }
         }
 
-        SloudsTrie {
+        SLoudsTrie {
             trie: SBitVec::from_iter(louds),
             has_value: SBitVec::from_iter(has_value),
             bytes,
@@ -180,9 +180,9 @@ where
     }
 }
 
-impl<T: Clone> From<LoudsTrie<T>> for SloudsTrie<T> {
-    fn from(louds: LoudsTrie<T>) -> SloudsTrie<T> {
-        SloudsTrie {
+impl<T: Clone> From<LoudsTrie<T>> for SLoudsTrie<T> {
+    fn from(louds: LoudsTrie<T>) -> SLoudsTrie<T> {
+        SLoudsTrie {
             trie: SBitVec::from_iter(louds.trie.iter()),
             has_value: SBitVec::from_iter(louds.has_value.iter()),
             bytes: Vec::from_iter(louds.bytes.iter()),
@@ -211,7 +211,7 @@ mod test {
         //        /|\         |    / \
         // 11    l m n        o   p   q
         let slouds =
-            SloudsTrie::from_iter(keys.iter().map(|k| (k, k[k.len() - 1])));
+            SLoudsTrie::from_iter(keys.iter().map(|k| (k, k[k.len() - 1])));
 
         assert_eq!(
             slouds.trie.iter().collect::<Vec<_>>(),
@@ -272,7 +272,7 @@ mod test {
             b"bel", b"bem", b"ben", b"bf", b"cg", b"dho", b"di", b"djp",
             b"djq", b"dk", b"b",
         ];
-        let slouds = SloudsTrie::from_iter(keys.iter().map(|k| (k, k[0])));
+        let slouds = SLoudsTrie::from_iter(keys.iter().map(|k| (k, k[0])));
 
         assert_eq!(slouds.degree(root.bit_pos), 3);
 
@@ -348,7 +348,7 @@ mod test {
             b"djq", b"dk", b"b",
         ];
 
-        let slouds = SloudsTrie::from_iter(keys.iter().map(|k| (k, k[0])));
+        let slouds = SLoudsTrie::from_iter(keys.iter().map(|k| (k, k[0])));
 
         for key in keys.iter() {
             assert_eq!(slouds.get(key), Some(&key[0]));
@@ -368,7 +368,7 @@ mod test {
         ];
 
         let slouds =
-            SloudsTrie::from_iter(numbers.iter().map(|k| (k.to_be_bytes(), k)));
+            SLoudsTrie::from_iter(numbers.iter().map(|k| (k.to_be_bytes(), k)));
 
         for k in numbers.iter() {
             assert_eq!(slouds.get(k.to_be_bytes()), Some(&k));
@@ -377,7 +377,7 @@ mod test {
 
     #[test]
     fn test_slouds_empty() {
-        let slouds = SloudsTrie::from_iter([(b"", 0)].iter().cloned());
+        let slouds = SLoudsTrie::from_iter([(b"", 0)].iter().cloned());
 
         assert_eq!(slouds.trie.iter().collect::<Vec<_>>(), vec![false]);
         assert_eq!(slouds.has_value.iter().collect::<Vec<_>>(), vec![true]);

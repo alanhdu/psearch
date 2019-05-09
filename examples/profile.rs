@@ -6,7 +6,7 @@ use rand::{Rng, SeedableRng};
 use structopt::StructOpt;
 
 use psearch::{
-    succinct::{LoudsTrie, SloudsTrie},
+    succinct::{LoudsTrie, SLoudsTrie},
     xfast::XFastSet,
     yfast::YFastSet,
 };
@@ -179,7 +179,7 @@ fn main() {
 
             dbg!("PROFILING");
             for _ in 0..profile.iters {
-                black_box(SloudsTrie::from_iter(values.iter().cloned()));
+                black_box(SLoudsTrie::from_iter(values.iter().cloned()));
             }
         }
 
@@ -189,7 +189,7 @@ fn main() {
             let mut bytes: Vec<u8> = vec![0; profile.size * 5 * max_size / 4];
             rng.fill(&mut bytes as &mut [u8]);
 
-            let trie = SloudsTrie::from_iter(unique_hashmap(
+            let trie = SLoudsTrie::from_iter(unique_hashmap(
                 &bytes,
                 &mut rng,
                 string_size,

@@ -2,7 +2,7 @@ use std::iter::FromIterator;
 
 use proptest::prelude::*;
 use psearch::select_rank::{BitVec, SelectRank};
-use psearch::succinct::{LoudsTrie, SloudsTrie};
+use psearch::succinct::{LoudsTrie, SLoudsTrie};
 
 proptest! {
     #[test]
@@ -73,7 +73,7 @@ proptest! {
         ),
         input: Vec<[u8; 8]>,
     ) {
-        let slouds = SloudsTrie::from_iter(map.clone());
+        let slouds = SLoudsTrie::from_iter(map.clone());
         for key in map.keys() {
             prop_assert_eq!(slouds.get(key), map.get(key));
         }
@@ -88,7 +88,7 @@ proptest! {
     fn proptest_sloudstrie_prefix(
         input in prop::collection::vec(any::<u8>(), 1..1000),
     ) {
-        let slouds = SloudsTrie::from_iter(
+        let slouds = SLoudsTrie::from_iter(
             (0..input.len()).map(|i| (&input[..i], i))
         );
 
@@ -103,7 +103,7 @@ proptest! {
         inputs in prop::collection::hash_set(any::<Vec<u8>>(), 1..1000),
         keys: Vec<Vec<u8>>,
     ) {
-        let slouds = SloudsTrie::from_iter(
+        let slouds = SLoudsTrie::from_iter(
             inputs.iter().map(|i| (i as &[u8], i.len()))
         );
 
