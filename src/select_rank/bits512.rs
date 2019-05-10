@@ -50,7 +50,7 @@ impl Bits512 {
     }
 
     /// Insert a bit at our index
-    pub fn insert_bit(&mut self, index: usize, bit: bool) {
+    pub fn insert(&mut self, index: usize, bit: bool) {
         debug_assert!(!self.is_full());
         debug_assert!(index <= self.len as usize);
 
@@ -232,15 +232,15 @@ mod test {
     }
 
     #[test]
-    fn test_bits512_insert_bit() {
+    fn test_bits512_insert() {
         let mut bits = Bits512::new();
         bits.len = 100;
 
-        bits.insert_bit(0, true);
-        bits.insert_bit(25, true);
-        bits.insert_bit(25, false);
-        bits.insert_bit(25, true);
-        bits.insert_bit(64, true);
+        bits.insert(0, true);
+        bits.insert(25, true);
+        bits.insert(25, false);
+        bits.insert(25, true);
+        bits.insert(64, true);
 
         assert_eq!(
             bits,
@@ -325,7 +325,7 @@ mod test {
 
             for (order, bit) in input.iter().cloned() {
                 let order = order as usize % (bits.len() + 1);
-                bits512.insert_bit(order, bit);
+                bits512.insert(order, bit);
                 bits.insert(order, bit);
 
                 prop_assert_eq!(&bits512.iter().collect::<Vec<_>>(), &bits);

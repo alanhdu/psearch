@@ -123,14 +123,14 @@ impl BitVec {
                     if leaf.is_full() {
                         let mut new = Box::new(leaf.split());
                         if index >= 256 {
-                            new.insert_bit(index as usize - 256, bit);
+                            new.insert(index as usize - 256, bit);
                         } else {
-                            leaf.insert_bit(index as usize, bit);
+                            leaf.insert(index as usize, bit);
                         }
                         stack.push((node, rank));
                         self.split(stack, new);
                     } else {
-                        leaf.insert_bit(index as usize, bit);
+                        leaf.insert(index as usize, bit);
                     }
                     break;
                 }

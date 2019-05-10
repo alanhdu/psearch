@@ -16,6 +16,10 @@ proptest = "0.9"
 structopt = "0.2"
 
 [[bench]]
+name = "select_rank"
+harness = false
+
+[[bench]]
 name = "level_search"
 harness = false
 
