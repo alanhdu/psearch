@@ -171,6 +171,8 @@ where
             }
         }
 
+        bytes.shrink_to_fit();
+        values.shrink_to_fit();
         SLoudsTrie {
             trie: SBitVec::from_iter(louds),
             has_value: SBitVec::from_iter(has_value),
