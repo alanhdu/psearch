@@ -63,10 +63,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             random_insert!(BTreeMap::<u64, usize>, u64),
             vec![100, 1000, 10000, 100000],
         )
-        .with_function(
-            "LoudsTrie",
-            random_insert!(LoudsTrie::<usize>, [u8; 8]),
-        ),
+        .with_function("LoudsTrie", random_insert!(LoudsTrie<usize>, [u8; 8])),
     );
     c.bench(
         "insert_random_32_bytes",
@@ -86,12 +83,13 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut urls = std::fs::File::open("benches/urls.csv").unwrap();
     urls.read_to_end(&mut buffer).unwrap();
     let bytes = BString::from_vec(buffer);
-    let urls = Rc::new(
-        bytes
-            .lines()
-            .map(|line| line.to_bstring().into_vec())
-            .collect::<Vec<_>>(),
-    );
+    let mut urls = bytes
+        .lines()
+        .map(|line| line.to_bstring().into_vec())
+        .collect::<Vec<_>>();
+    let mut rng = SmallRng::from_seed([5; 16]);
+    urls.shuffle(&mut rng);
+    let urls = Rc::new(urls);
 
     macro_rules! url_insert {
         ($map: ty) => {{
@@ -273,7 +271,9 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     macro_rules! url_gen {
         ($map: ty, $n: expr) => {{
-            let urls = Rc::clone(&urls);
+            let mut urls = Vec::clone(&urls);
+            let mut rng = SmallRng::from_seed([5; 16]);
+            urls.shuffle(&mut rng);
             let mut map = <$map>::new();
             for (i, key) in urls.iter().take($n).enumerate() {
                 map.insert(key.clone(), i);
@@ -305,7 +305,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     ]);
 
     macro_rules! url_get {
-        ($name: ident) => {{
+        ($name: ident, $e: expr) => {{
             let rc = Rc::clone(&$name);
             let urls = Rc::clone(&urls);
             move |b, &n| {
@@ -314,26 +314,40 @@ fn criterion_benchmark(c: &mut Criterion) {
                     1000 => &rc[1],
                     10000 => &rc[2],
                     100000 => &rc[3],
-                    211708 => &rc[4],
                     _ => unimplemented!(),
                 };
                 let mut rng = SmallRng::from_seed([7; 16]);
                 b.iter(|| {
-                    black_box(map.get(&urls.choose(&mut rng).unwrap() as &[u8]))
+                    let index: usize = if $e {
+                        rng.gen_range(0,n)
+                    } else {
+                        rng.gen_range(n, 211708)
+                    };
+                    black_box(map.get(&urls[index]));
                 });
             }
         }};
     }
 
     c.bench(
-        "get_random_url",
+        "get_random_url_true",
         ParameterizedBenchmark::new(
             "BTree",
-            url_get!(btree_url),
-            vec![100, 1000, 10000, 100000, 211708],
+            url_get!(btree_url, true),
+            vec![100, 1000, 10000, 100000],
         )
-        .with_function("LoudsTrie", url_get!(louds_url))
-        .with_function("SLoudsTrie", url_get!(slouds_url)),
+        .with_function("LoudsTrie", url_get!(louds_url, true))
+        .with_function("SLoudsTrie", url_get!(slouds_url, true)),
+    );
+    c.bench(
+        "get_random_url_false",
+        ParameterizedBenchmark::new(
+            "BTree",
+            url_get!(btree_url, false),
+            vec![100, 1000, 10000, 100000],
+        )
+        .with_function("LoudsTrie", url_get!(louds_url, false))
+        .with_function("SLoudsTrie", url_get!(slouds_url, false)),
     );
 }
 
