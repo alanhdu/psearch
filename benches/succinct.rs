@@ -29,7 +29,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         "insert_sorted_8_bytes",
         ParameterizedBenchmark::new(
             "BTree",
-            sorted_insert!(BTreeMap::<u64, u64>, i => i),
+            sorted_insert!(BTreeMap<u64, u64>, i => i),
             vec![100, 1000, 10000, 100000],
         )
         .with_function(
@@ -60,21 +60,24 @@ fn criterion_benchmark(c: &mut Criterion) {
         "insert_random_8_bytes",
         ParameterizedBenchmark::new(
             "BTree",
-            random_insert!(BTreeMap::<u64, usize>, u64),
+            random_insert!(BTreeMap<u64, usize>, u64),
             vec![100, 1000, 10000, 100000],
         )
-        .with_function("LoudsTrie", random_insert!(LoudsTrie<usize>, [u8; 8])),
+        .with_function(
+            "LoudsTrie",
+            random_insert!(LoudsTrie<usize>, [u8; 8]),
+        ),
     );
     c.bench(
         "insert_random_32_bytes",
         ParameterizedBenchmark::new(
             "BTree",
-            random_insert!(BTreeMap::<[u8; 32], usize>, [u8; 32]),
+            random_insert!(BTreeMap<[u8; 32], usize>, [u8; 32]),
             vec![100, 1000, 10000, 100000],
         )
         .with_function(
             "LoudsTrie",
-            random_insert!(LoudsTrie::<usize>, [u8; 32]),
+            random_insert!(LoudsTrie<usize>, [u8; 32]),
         ),
     );
 
@@ -109,7 +112,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         "insert_urls",
         ParameterizedBenchmark::new(
             "BTree",
-            url_insert!(BTreeMap::<&[u8], usize>),
+            url_insert!(BTreeMap<&[u8], usize>),
             vec![100, 1000, 10000, 100000],
         )
         .with_function("LoudsTrie", url_insert!(LoudsTrie<usize>))
@@ -161,11 +164,11 @@ fn criterion_benchmark(c: &mut Criterion) {
         SLoudsTrie::from(&louds8[4]),
     ]);
     let btree8 = Rc::new([
-        gen!(BTreeMap::<u64, usize>, 100, rng => rng.gen::<u64>()),
-        gen!(BTreeMap::<u64, usize>, 1000, rng => rng.gen::<u64>()),
-        gen!(BTreeMap::<u64, usize>, 10_000, rng => rng.gen::<u64>()),
-        gen!(BTreeMap::<u64, usize>, 100_000, rng => rng.gen::<u64>()),
-        gen!(BTreeMap::<u64, usize>, 1_000_000, rng => rng.gen::<u64>()),
+        gen!(BTreeMap<u64, usize>, 100, rng => rng.gen::<u64>()),
+        gen!(BTreeMap<u64, usize>, 1000, rng => rng.gen::<u64>()),
+        gen!(BTreeMap<u64, usize>, 10_000, rng => rng.gen::<u64>()),
+        gen!(BTreeMap<u64, usize>, 100_000, rng => rng.gen::<u64>()),
+        gen!(BTreeMap<u64, usize>, 1_000_000, rng => rng.gen::<u64>()),
     ]);
     c.bench(
         "get_random_8_bytes",
