@@ -88,126 +88,218 @@ fn criterion_benchmark(c: &mut Criterion) {
         .sample_size(10),
     );
 
-
-    macro_rules! reference {
-        ($rng: expr, true) => {
-            &$rng
-        };
-        ($rng: expr, false) => {
-            $rng
-        };
-    }
-
-    macro_rules! gen {
-        ($name: ident, $set: ty, $n: expr) => {
-            let mut rng = SmallRng::from_seed([5; 16]);
-            let mut $name = <$set>::new();
-            while $name.len() < $n {
-                $name.insert(rng.gen());
-            }
-        }
-    }
-
-    macro_rules! random_contains {
-        ($set: ty, $ty: ident) => {{
-            gen!(set100, $set, 100);
-            gen!(set1000, $set, 1000);
-            gen!(set10_000, $set, 10000);
-            gen!(set100_000, $set, 100_000);
-            gen!(set1_000_000, $set, 1_000_000);
-            gen!(set10_000_000, $set, 10_000_000);
-            move |b, &n| {
-                let set = match n {
-                    100 => &set100,
-                    1000 => &set1000,
-                    10_000 => &set10_000,
-                    100_000 => &set100_000,
-                    1_000_000 => &set1_000_000,
-                    10_000_000 => &set10_000_000,
-                    _ => unreachable!(),
-                };
-                let mut rng = SmallRng::from_seed([7; 16]);
-                b.iter(|| black_box(set.contains(reference!(rng.gen(), $ty))));
+    macro_rules! bench_construct {
+        ($ty: ty, $len: expr, ($set: ident, $b: ident) => $e: expr) => {{
+            let sets = $len
+                .iter()
+                .map(|n| {
+                    let mut rng = SmallRng::from_seed([5; 16]);
+                    let mut set = <$ty>::new();
+                    while set.len() < *n {
+                        set.insert(rng.gen());
+                    }
+                    set
+                })
+                .collect::<Vec<_>>();
+            move |$b, n| {
+                let pos = $len.binary_search(n).unwrap();
+                let $set = &sets[pos];
+                $e
             }
         }};
     }
+    let lens = [100, 1000, 10000, 100000, 1_000_000, 10_000_000];
     c.bench(
         "random_contains_u32",
         ParameterizedBenchmark::new(
             "YFastSet",
-            random_contains!(YFastSet<u32>, false),
-            vec![100, 1000, 10000, 100000, 1_000_000, 10_000_000],
+            bench_construct!(YFastSet<u32>, lens, (set, b) => {
+                let mut rng = SmallRng::from_seed([5; 16]);
+                b.iter(|| black_box(set.contains(rng.gen())));
+            }),
+            lens.to_vec(),
         )
-        .with_function("BTreeSet", random_contains!(BTreeSet<u32>, true))
-        .with_function("HashSet", random_contains!(HashSet<u32>, true))
+        .with_function(
+            "BTreeSet",
+            bench_construct!(BTreeSet<u32>, lens, (set, b) => {
+                let mut rng = SmallRng::from_seed([5; 16]);
+                b.iter(|| black_box(set.contains(&rng.gen())));
+            }),
+        )
+        .with_function(
+            "HashSet",
+            bench_construct!(HashSet<u32>, lens, (set, b) => {
+                let mut rng = SmallRng::from_seed([5; 16]);
+                b.iter(|| black_box(set.contains(&rng.gen())));
+            }),
+        ),
     );
+    c.bench(
+        "contains_u32",
+        ParameterizedBenchmark::new(
+            "YFastSet",
+            bench_construct!(YFastSet<u32>, lens, (set, b) => {
+                b.iter(|| black_box(set.contains(0xdeadbeef)));
+            }),
+            lens.to_vec(),
+        )
+        .with_function(
+            "BTreeSet",
+            bench_construct!(BTreeSet<u32>, lens, (set, b) => {
+                b.iter(|| black_box(set.contains(&0xdeadbeef)));
+            }),
+        )
+        .with_function(
+            "HashSet",
+            bench_construct!(HashSet<u32>, lens, (set, b) => {
+                b.iter(|| black_box(set.contains(&0xdeadbeef)));
+            }),
+        ),
+    );
+
     c.bench(
         "random_contains_u64",
         ParameterizedBenchmark::new(
             "YFastSet",
-            random_contains!(YFastSet<u64>, false),
-            vec![100, 1000, 10000, 100000, 1_000_000, 10_000_000],
+            bench_construct!(YFastSet<u64>, lens, (set, b) => {
+                let mut rng = SmallRng::from_seed([5; 16]);
+                b.iter(|| black_box(set.contains(rng.gen())));
+            }),
+            lens.to_vec(),
         )
-        .with_function("BTreeSet", random_contains!(BTreeSet<u32>, true))
-        .with_function("HashSet", random_contains!(HashSet<u64>, true))
+        .with_function(
+            "BTreeSet",
+            bench_construct!(BTreeSet<u64>, lens, (set, b) => {
+                let mut rng = SmallRng::from_seed([5; 16]);
+                b.iter(|| black_box(set.contains(&rng.gen())));
+            }),
+        )
+        .with_function(
+            "HashSet",
+            bench_construct!(HashSet<u64>, lens, (set, b) => {
+                let mut rng = SmallRng::from_seed([5; 16]);
+                b.iter(|| black_box(set.contains(&rng.gen())));
+            }),
+        ),
+    );
+    c.bench(
+        "contains_u64",
+        ParameterizedBenchmark::new(
+            "YFastSet",
+            bench_construct!(YFastSet<u64>, lens, (set, b) => {
+                b.iter(|| black_box(set.contains(0xdeadbeef)));
+            }),
+            lens.to_vec(),
+        )
+        .with_function(
+            "BTreeSet",
+            bench_construct!(BTreeSet<u64>, lens, (set, b) => {
+                b.iter(|| black_box(set.contains(&0xdeadbeef)));
+            }),
+        )
+        .with_function(
+            "HashSet",
+            bench_construct!(HashSet<u64>, lens, (set, b) => {
+                b.iter(|| black_box(set.contains(&0xdeadbeef)));
+            }),
+        ),
     );
 
-    macro_rules! successor {
-        ($set: ident, $key: expr, true) => {
-            $set.range($key..).next()
-        };
-        ($set: ident, $key: expr, false) => {
-            $set.successor($key)
-        };
-    }
-    macro_rules! random_successor {
-        ($set: ty, $ty: ident) => {{
-            gen!(set100, $set, 100);
-            gen!(set1000, $set, 1000);
-            gen!(set10_000, $set, 10000);
-            gen!(set100_000, $set, 100_000);
-            gen!(set1_000_000, $set, 1_000_000);
-            move |b, &n| {
-                let set = match n {
-                    100 => &set100,
-                    1000 => &set1000,
-                    10_000 => &set10_000,
-                    100_000 => &set100_000,
-                    1_000_000 => &set1_000_000,
-                    _ => unreachable!(),
-                };
-                let mut rng = SmallRng::from_seed([7; 16]);
-                b.iter(|| {
-                    // This is a hack for type inference to work automatically
-                    // Rust should optimize out the `if false` branch
-                    let key = rng.gen();
-                    if false {
-                        set.contains(reference!(key, $ty));
-                    }
-                    black_box(successor!(set, key, $ty))
-                });
-            }
-        }};
-    }
+    let lens = [100, 1000, 10000, 100000, 1_000_000];
     c.bench(
         "random_successor_u32",
         ParameterizedBenchmark::new(
-            "XFastSet",
-            random_successor!(XFastSet<u32>, false),
-            vec![100, 1000, 10000, 100000, 1_000_000],
+            "YFastSet",
+            bench_construct!(YFastSet<u32>, lens, (set, b) => {
+                let mut rng = SmallRng::from_seed([5; 16]);
+                b.iter(|| black_box(set.successor(rng.gen())));
+            }),
+            lens.to_vec(),
         )
-        .with_function("YFastSet", random_successor!(YFastSet<u64>, false))
-        .with_function("BTreeSet", random_successor!(BTreeSet<u32>, true))
+        .with_function(
+            "XFastSet",
+            bench_construct!(XFastSet<u32>, lens, (set, b) => {
+                let mut rng = SmallRng::from_seed([5; 16]);
+                b.iter(|| black_box(set.successor(rng.gen())));
+            }),
+        )
+        .with_function(
+            "BTreeSet",
+            bench_construct!(BTreeSet<u32>, lens, (set, b) => {
+                let mut rng = SmallRng::from_seed([5; 16]);
+                b.iter(|| black_box(set.range(rng.gen::<u32>()..).next()));
+            }),
+        ),
     );
+    c.bench(
+        "successor_u32",
+        ParameterizedBenchmark::new(
+            "YFastSet",
+            bench_construct!(YFastSet<u32>, lens, (set, b) => {
+                b.iter(|| black_box(set.successor(0xdeadbeef)));
+            }),
+            lens.to_vec(),
+        )
+        .with_function(
+            "XFastSet",
+            bench_construct!(XFastSet<u32>, lens, (set, b) => {
+                b.iter(|| black_box(set.successor(0xdeadbeef)));
+            }),
+        )
+        .with_function(
+            "BTreeSet",
+            bench_construct!(BTreeSet<u32>, lens, (set, b) => {
+                b.iter(|| black_box(set.range(0xdeadbeef..).next()));
+            }),
+        ),
+    );
+
     c.bench(
         "random_successor_u64",
         ParameterizedBenchmark::new(
-            "XFastSet",
-            random_successor!(XFastSet<u64>, false),
-            vec![100, 1000, 10000, 100000, 1_000_000],
+            "YFastSet",
+            bench_construct!(YFastSet<u64>, lens, (set, b) => {
+                let mut rng = SmallRng::from_seed([5; 16]);
+                b.iter(|| black_box(set.successor(rng.gen())));
+            }),
+            lens.to_vec(),
         )
-        .with_function("YFastSet", random_successor!(YFastSet<u64>, false))
-        .with_function("BTreeSet", random_successor!(BTreeSet<u64>, true))
+        .with_function(
+            "XFastSet",
+            bench_construct!(XFastSet<u64>, lens, (set, b) => {
+                let mut rng = SmallRng::from_seed([5; 16]);
+                b.iter(|| black_box(set.successor(rng.gen())));
+            }),
+        )
+        .with_function(
+            "BTreeSet",
+            bench_construct!(BTreeSet<u64>, lens, (set, b) => {
+                let mut rng = SmallRng::from_seed([5; 16]);
+                b.iter(|| black_box(set.range(rng.gen::<u64>()..).next()));
+            }),
+        ),
+    );
+    c.bench(
+        "successor_u64",
+        ParameterizedBenchmark::new(
+            "YFastSet",
+            bench_construct!(YFastSet<u64>, lens, (set, b) => {
+                b.iter(|| black_box(set.successor(0xdeadbeef)));
+            }),
+            lens.to_vec(),
+        )
+        .with_function(
+            "XFastSet",
+            bench_construct!(XFastSet<u64>, lens, (set, b) => {
+                b.iter(|| black_box(set.successor(0xdeadbeef)));
+            }),
+        )
+        .with_function(
+            "BTreeSet",
+            bench_construct!(BTreeSet<u64>, lens, (set, b) => {
+                b.iter(|| black_box(set.range(0xdeadbeef..).next()));
+            }),
+        ),
     );
 }
 
