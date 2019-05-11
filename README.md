@@ -40,3 +40,26 @@ This has implementations of several different data structures:
   performance.
   - While our LOUDS tries successfully save a lot of space compared to a
     B-tree, their lookup and insertion performance is pretty miserable.
+
+Lessons learned from these projects:
+- SIMD instructions are easier to you use than you think (although you
+  often need to specifically engineer data structures to be able to use
+  them effectively).
+- CPUs are stupidly fast compared to cache. I knew this based off
+  of "Latency Numbers I Memorized", but actually seeing it in practice
+  was viscerally different from just intellectually knowing.
+- Bit-level parallelism is awesome and underused. Seriously, why aren't
+  these tricks more widely used? (Probably because most things don't
+  actually need to be that fast).
+- Perf is really nice, but I'm not very good at interpret it. A lot of
+  times, it'll say something like "90% of your cycles are spent on this
+  single `mov` instruction" which seems super implausible.
+  - I don't know if it's just me, but I could not for the life of me
+    figure out why Y-fast maps run into so many cache misses. I might
+    take another look after some time to relax after school's over, but
+    for now it's a frustrating mystery.
+- There's a real skew between theoretical data structures and practical
+  implementations. A lot of the succinct data structures I read about
+  seemed more interested in playing "games" to get their space overhead
+  to technically n + o(n) space, even when this comes with tons of
+  practical problems.
