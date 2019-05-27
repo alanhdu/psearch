@@ -363,4 +363,15 @@ mod test {
             }
         }
     }
+
+    #[test]
+    fn test_xfast_ZZZ() {
+        let mut xfast: XFastMap<u32, ()> = XFastMap::new();
+        assert_eq!(xfast.insert(1702895360, ()), None);
+        assert_eq!(xfast.insert(1702895361, ()), None);
+
+        assert_eq!(xfast.successor(1702895361), Some((1702895361, &())));
+    }
+
+
 }

@@ -6,7 +6,14 @@ use std::ptr;
 use crate::bytemap::{ByteMap, Entry};
 
 pub trait LevelSearchable<T>:
-    std::hash::Hash + Copy + Clone + Eq + PartialEq + Ord + PartialOrd
+    std::fmt::Debug
+    + std::hash::Hash
+    + Copy
+    + Clone
+    + Eq
+    + PartialEq
+    + Ord
+    + PartialOrd
 {
     type LSS;
 
@@ -68,7 +75,6 @@ impl<K: LevelSearchable<V>, V> Descendant<K, V> {
         }
     }
 
-
     fn is_empty(&self) -> bool {
         debug_assert_eq!(self.maxes.is_empty(), self.min.is_none());
         self.maxes.is_empty()
@@ -97,8 +103,12 @@ impl<K: LevelSearchable<V>, V> Descendant<K, V> {
         if byte <= *min_byte {
             Some(unsafe { min.as_ref() })
         } else {
-            let predecessor = self.predecessor(byte)?;
-            unsafe { predecessor.next.as_ref() }
+            let (pbyte, predecessor) = self.maxes.predecessor(byte)?;
+            if byte == pbyte {
+                Some(unsafe { predecessor.as_ref() })
+            } else {
+                unsafe { predecessor.as_ref().next.as_ref() }
+            }
         }
     }
 
@@ -107,13 +117,16 @@ impl<K: LevelSearchable<V>, V> Descendant<K, V> {
         &mut self,
         byte: u8,
     ) -> Option<&mut LNode<K, V>> {
-        let (min_byte, _) = self.min.as_mut()?;
+        let (min_byte, min) = self.min.as_mut()?;
         if byte <= *min_byte {
-            // Cannot use min from above because of borrow checker error
-            return Some(unsafe { self.min.as_mut().unwrap().1.as_mut() })
+            Some(unsafe { min.as_mut() })
         } else {
-            let predecessor = self.predecessor_mut(byte)?;
-            unsafe { predecessor.next.as_mut() }
+            let (pbyte, predecessor) = self.maxes.predecessor_mut(byte)?;
+            if byte == pbyte {
+                Some(unsafe { predecessor.as_mut() })
+            } else {
+                unsafe { predecessor.as_ref().next.as_mut() }
+            }
         }
     }
 
