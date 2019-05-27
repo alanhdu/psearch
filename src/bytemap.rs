@@ -18,18 +18,18 @@ impl<T> Default for ByteMap<T> {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-struct Node4<T> {
+pub struct Node4<T> {
     bytes: [u8; 4],
     values: [Option<T>; 4],
 }
 
 #[derive(Debug, Eq, PartialEq)]
-struct Node16<T> {
+pub struct Node16<T> {
     bytes: [u8; 16],
     values: [Option<T>; 16],
 }
 
-struct Node48<T> {
+pub struct Node48<T> {
     positions: [u8; 256],
     values: [Option<T>; 48],
 }
@@ -61,7 +61,7 @@ impl<T: PartialEq> PartialEq for Node48<T> {
     }
 }
 
-struct Node256<T> {
+pub struct Node256<T> {
     values: [Option<T>; 256],
 }
 
@@ -121,15 +121,14 @@ impl<'a, T> OccupiedEntry<'a, T> {
     pub fn remove(&mut self) {
         match self.map {
             ByteMap::N4(len, ref mut n) => {
-                let len = *len as usize;
                 for i in self.rank..(n.bytes.len() - 1) {
                     n.bytes[i] = n.bytes[i + 1];
                     n.values.swap(i, i + 1);
                 }
                 n.bytes[n.bytes.len() - 1] = 0;
                 n.values[n.bytes.len() - 1] = None;
-                debug_assert!(len >= 1);
-                len -= 1;
+
+                *len -= 1;
             }
             ByteMap::N16(len, ref mut n) => {
                 for i in self.rank..(n.bytes.len() - 1) {
@@ -139,29 +138,30 @@ impl<'a, T> OccupiedEntry<'a, T> {
                 n.bytes[n.bytes.len() - 1] = 0;
                 n.values[n.bytes.len() - 1] = None;
 
-                len -= 1;
+                *len -= 1;
             }
-            Node::N48(ref mut n) => {
+            ByteMap::N48(len, ref mut n) => {
                 let pos = std::mem::replace(
                     &mut n.positions[self.key as usize],
                     0xFF,
                 );
-                if pos != (len - 1) as u8 {
+                *len -= 1;
+                if pos != *len as u8 {
                     let last = n
                         .positions
                         .iter()
-                        .position(|p| *p == (len - 1) as u8)
+                        .position(|p| *p == *len as u8)
                         .unwrap();
                     n.values.swap(n.positions[last] as usize, pos as usize);
                     n.positions[last] = pos;
                 }
-                n.values[(len - 1) as usize] = None;
+                n.values[*len as usize] = None;
             }
-            Node::N256(ref mut n) => {
+            ByteMap::N256(len, ref mut n) => {
                 n.values[self.key as usize] = None;
+                *len -= 1;
             }
         }
-        self.map.len -= 1;
     }
 }
 
@@ -173,32 +173,42 @@ pub struct VacantEntry<'a, T> {
 
 impl<'a, T> VacantEntry<'a, T> {
     pub fn insert(&mut self, value: T) {
-        match self.map.node {
-            Node::N4(ref mut n) => {
+        match self.map {
+            ByteMap::N4(4, _) => self.map.upsize(),
+            ByteMap::N16(16, _) => self.map.upsize(),
+            ByteMap::N48(48, _) => self.map.upsize(),
+            _ => {}
+        }
+
+        match self.map {
+            ByteMap::N4(len, ref mut n) => {
                 for i in ((self.rank + 1)..n.bytes.len()).rev() {
                     n.bytes[i] = n.bytes[i - 1];
                     n.values.swap(i, i - 1);
                 }
                 n.bytes[self.rank] = self.key;
                 n.values[self.rank] = Some(value);
+                *len += 1;
             }
-            Node::N16(ref mut n) => {
+            ByteMap::N16(len, ref mut n) => {
                 for i in ((self.rank + 1)..n.bytes.len()).rev() {
                     n.bytes[i] = n.bytes[i - 1];
                     n.values.swap(i, i - 1);
                 }
                 n.bytes[self.rank] = self.key;
                 n.values[self.rank] = Some(value);
+                *len += 1;
             }
-            Node::N48(ref mut n) => {
-                n.positions[self.key as usize] = self.map.len as u8;
-                n.values[self.map.len as usize] = Some(value);
+            ByteMap::N48(len, ref mut n) => {
+                n.positions[self.key as usize] = *len as u8;
+                n.values[*len as usize] = Some(value);
+                *len += 1;
             }
-            Node::N256(ref mut n) => {
+            ByteMap::N256(len, ref mut n) => {
                 n.values[self.key as usize] = Some(value);
+                *len += 1;
             }
         }
-        self.map.len += 1;
     }
 }
 
@@ -303,7 +313,7 @@ impl<T> ByteMap<T> {
                     }
                 }
             }
-            ByteMap::N48(len, ref n) => {
+            ByteMap::N48(len, ref mut n) => {
                 let len = *len as usize;
                 for b in (0..=byte).rev() {
                     let pos = n.positions[b as usize] as usize;
@@ -312,7 +322,7 @@ impl<T> ByteMap<T> {
                     }
                 }
             }
-            ByteMap::N256(len, ref n) => {
+            ByteMap::N256(len, ref mut n) => {
                 let len = *len as usize;
                 for b in (0..=byte).rev() {
                     if n.values[b as usize].is_some() {
@@ -369,7 +379,7 @@ impl<T> ByteMap<T> {
 
     pub fn successor_mut(&mut self, byte: u8) -> Option<(u8, &mut T)> {
         match self {
-            ByteMap::N4(len, ref n) => {
+            ByteMap::N4(len, ref mut n) => {
                 let len = *len as usize;
                 if len == 0 {
                     return None;
@@ -381,16 +391,14 @@ impl<T> ByteMap<T> {
                     }
                 }
             }
-            ByteMap::N16(len, ref n) => {
-                let len = *len as usize;
+            ByteMap::N16(_, ref mut n) => {
                 for (i, b) in n.bytes.iter().cloned().enumerate() {
                     if b >= byte {
                         return n.values[i].as_mut().map(|r| (b, r));
                     }
                 }
             }
-            ByteMap::N48(len, ref n) => {
-                let len = *len as usize;
+            ByteMap::N48(_, ref mut n) => {
                 for b in byte..=255 {
                     let pos = n.positions[b as usize] as usize;
                     if pos < 48 {
@@ -398,8 +406,7 @@ impl<T> ByteMap<T> {
                     }
                 }
             }
-            ByteMap::N256(len, ref n) => {
-                let len = *len as usize;
+            ByteMap::N256(_, ref mut n) => {
                 for b in byte..=255 {
                     if n.values[b as usize].is_some() {
                         return n.values[b as usize].as_mut().map(|r| (b, r));
@@ -442,7 +449,7 @@ impl<T> ByteMap<T> {
 
     pub fn get_mut(&mut self, key: u8) -> Option<&mut T> {
         match self {
-            ByteMap::N4(len, ref n) => {
+            ByteMap::N4(len, ref mut n) => {
                 let len = *len as usize;
                 if len == 0 {
                     return None;
@@ -454,7 +461,7 @@ impl<T> ByteMap<T> {
                 }
                 None
             }
-            ByteMap::N16(len, ref n) => {
+            ByteMap::N16(len, ref mut n) => {
                 let len = *len as usize;
                 for (i, byte) in n.bytes[..len].iter().cloned().enumerate() {
                     if byte == key {
@@ -463,10 +470,10 @@ impl<T> ByteMap<T> {
                 }
                 None
             }
-            ByteMap::N48(_, ref n) => {
+            ByteMap::N48(_, ref mut n) => {
                 n.values[n.positions[key as usize] as usize].as_mut()
             }
-            ByteMap::N256(_, ref n) => n.values[key as usize].as_mut(),
+            ByteMap::N256(_, ref mut n) => n.values[key as usize].as_mut(),
         }
     }
 
@@ -617,7 +624,7 @@ mod test {
     fn test_bytemap_size() {
         assert_eq!(
             std::mem::size_of::<ByteMap<u32>>(),
-            3 * std::mem::size_of::<usize>()
+            2 * std::mem::size_of::<usize>()
         );
     }
 
@@ -632,7 +639,7 @@ mod test {
             assert_eq!(map.insert(key, key).is_some(), !expected.insert(key));
             assert_eq!(map.successor(key), Some((key, &key)));
             assert_eq!(map.predecessor(key), Some((key, &key)));
-            assert_eq!(map.len as usize, expected.len());
+            assert_eq!(map.len(), expected.len());
 
             for i in 0..=255 {
                 assert_eq!(
