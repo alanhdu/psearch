@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeSet};
 use std::iter::FromIterator;
 
 use criterion::black_box;
@@ -27,6 +27,9 @@ enum Ty {
     XFastInsert,
     #[structopt(name = "xfast_successor")]
     XFastSuccessor,
+
+    #[structopt(name = "btree_successor")]
+    BTreeSuccessor,
 
     #[structopt(name = "yfast_insert")]
     YFastInsert,
@@ -99,6 +102,17 @@ fn main() {
             dbg!("PROFILING");
             for _ in 0..profile.iters {
                 black_box(xfast.successor(rng.gen()));
+            }
+        }
+        Ty::BTreeSuccessor => {
+            let mut btree: BTreeSet<u32> = BTreeSet::new();
+            while btree.len() < profile.size {
+                btree.insert(rng.gen());
+            }
+
+            dbg!("PROFILING");
+            for _ in 0..profile.iters {
+                black_box(btree.range(&rng.gen()..).next());
             }
         }
         Ty::YFastSuccessor => {
