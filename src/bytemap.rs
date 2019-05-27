@@ -1,71 +1,19 @@
 #![allow(dead_code)]
 use std::fmt::Debug;
 
-// TODO(alan): SIMD-ify
+// This is an enum with the length in every variant so we can overlap
+// the enum discriminant with the length and save space
 #[derive(Debug, Eq, PartialEq)]
-pub struct ByteMap<T> {
-    len: u16,
-    node: Node<T>,
+pub enum ByteMap<T> {
+    N4(u16, Box<Node4<T>>),
+    N16(u16, Box<Node16<T>>),
+    N48(u16, Box<Node48<T>>),
+    N256(u16, Box<Node256<T>>),
 }
 
 impl<T> Default for ByteMap<T> {
     fn default() -> ByteMap<T> {
         ByteMap::new()
-    }
-}
-
-#[derive(Debug, Eq, PartialEq)]
-enum Node<T> {
-    N4(Box<Node4<T>>),
-    N16(Box<Node16<T>>),
-    N48(Box<Node48<T>>),
-    N256(Box<Node256<T>>),
-}
-
-impl<T> Node<T> {
-    fn upsize(&mut self) {
-        match self {
-            Node::N4(ref mut n) => {
-                let mut new = Box::new(Node16 {
-                    bytes: [0; 16],
-                    values: Default::default(),
-                });
-                new.bytes[0] = n.bytes[0];
-                new.bytes[1] = n.bytes[1];
-                new.bytes[2] = n.bytes[2];
-                new.bytes[3] = n.bytes[3];
-                new.values[..4].swap_with_slice(&mut n.values);
-                *self = Node::N16(new);
-            }
-            Node::N16(ref mut n) => {
-                let mut new = Box::new(Node48 {
-                    positions: [u8::max_value(); 256],
-                    values: unsafe { std::mem::zeroed() },
-                });
-
-                for i in 0..16 {
-                    new.positions[n.bytes[i as usize] as usize] = i;
-                }
-                new.values[..16].swap_with_slice(&mut n.values);
-                *self = Node::N48(new);
-            }
-            Node::N48(ref mut n) => {
-                let mut new = Box::new(Node256 {
-                    values: unsafe { std::mem::zeroed() },
-                });
-
-                for i in 0..=255 {
-                    if n.positions[i] < 48 {
-                        new.values[i as usize] = std::mem::replace(
-                            &mut n.values[n.positions[i] as usize],
-                            None,
-                        );
-                    }
-                }
-                *self = Node::N256(new);
-            }
-            _ => {}
-        }
     }
 }
 
@@ -157,37 +105,41 @@ pub struct OccupiedEntry<'a, T> {
 
 impl<'a, T> OccupiedEntry<'a, T> {
     pub fn get_mut(&mut self) -> &mut T {
-        match self.map.node {
-            Node::N4(ref mut n) => n.values[self.rank].as_mut().unwrap(),
-            Node::N16(ref mut n) => n.values[self.rank].as_mut().unwrap(),
-            Node::N48(ref mut n) => n.values
+        match self.map {
+            ByteMap::N4(_, ref mut n) => n.values[self.rank].as_mut().unwrap(),
+            ByteMap::N16(_, ref mut n) => n.values[self.rank].as_mut().unwrap(),
+            ByteMap::N48(_, ref mut n) => n.values
                 [n.positions[self.key as usize] as usize]
                 .as_mut()
                 .unwrap(),
-            Node::N256(ref mut n) => {
+            ByteMap::N256(_, ref mut n) => {
                 n.values[self.key as usize].as_mut().unwrap()
             }
         }
     }
 
     pub fn remove(&mut self) {
-        let len = self.map.len;
-        match self.map.node {
-            Node::N4(ref mut n) => {
+        match self.map {
+            ByteMap::N4(len, ref mut n) => {
+                let len = *len as usize;
                 for i in self.rank..(n.bytes.len() - 1) {
                     n.bytes[i] = n.bytes[i + 1];
                     n.values.swap(i, i + 1);
                 }
                 n.bytes[n.bytes.len() - 1] = 0;
                 n.values[n.bytes.len() - 1] = None;
+                debug_assert!(len >= 1);
+                len -= 1;
             }
-            Node::N16(ref mut n) => {
+            ByteMap::N16(len, ref mut n) => {
                 for i in self.rank..(n.bytes.len() - 1) {
                     n.bytes[i] = n.bytes[i + 1];
                     n.values.swap(i, i + 1);
                 }
                 n.bytes[n.bytes.len() - 1] = 0;
                 n.values[n.bytes.len() - 1] = None;
+
+                len -= 1;
             }
             Node::N48(ref mut n) => {
                 let pos = std::mem::replace(
@@ -252,13 +204,13 @@ impl<'a, T> VacantEntry<'a, T> {
 
 impl<T> ByteMap<T> {
     pub fn new() -> ByteMap<T> {
-        ByteMap {
-            node: Node::N4(Box::new(Node4 {
+        ByteMap::N4(
+            0,
+            Box::new(Node4 {
                 bytes: [0; 4],
                 values: Default::default(),
-            })),
-            len: 0,
-        }
+            }),
+        )
     }
 
     #[cfg(test)]
@@ -271,34 +223,46 @@ impl<T> ByteMap<T> {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.len == 0
+        match self {
+            ByteMap::N4(len, _) => *len == 0,
+            ByteMap::N16(len, _) => *len == 0,
+            ByteMap::N48(len, _) => *len == 0,
+            ByteMap::N256(len, _) => *len == 0,
+        }
     }
 
     pub fn len(&self) -> usize {
-        self.len as usize
+        match self {
+            ByteMap::N4(len, _) => *len as usize,
+            ByteMap::N16(len, _) => *len as usize,
+            ByteMap::N48(len, _) => *len as usize,
+            ByteMap::N256(len, _) => *len as usize,
+        }
     }
 
     pub fn predecessor(&self, byte: u8) -> Option<(u8, &T)> {
-        if self.is_empty() {
-            return None;
-        }
-        let len = self.len as usize;
-        match self.node {
-            Node::N4(ref n) => {
+        match self {
+            ByteMap::N4(len, ref n) => {
+                let len = *len as usize;
+                if len == 0 {
+                    return None;
+                }
                 for (i, b) in n.bytes[..len].iter().cloned().enumerate().rev() {
                     if b <= byte {
                         return n.values[i].as_ref().map(|r| (b, r));
                     }
                 }
             }
-            Node::N16(ref n) => {
+            ByteMap::N16(len, ref n) => {
+                let len = *len as usize;
                 for (i, b) in n.bytes[..len].iter().cloned().enumerate().rev() {
                     if b <= byte {
                         return n.values[i].as_ref().map(|r| (b, r));
                     }
                 }
             }
-            Node::N48(ref n) => {
+            ByteMap::N48(len, ref n) => {
+                let len = *len as usize;
                 for b in (0..=byte).rev() {
                     let pos = n.positions[b as usize] as usize;
                     if pos < 48 {
@@ -306,7 +270,8 @@ impl<T> ByteMap<T> {
                     }
                 }
             }
-            Node::N256(ref n) => {
+            ByteMap::N256(len, ref n) => {
+                let len = *len as usize;
                 for b in (0..=byte).rev() {
                     if n.values[b as usize].is_some() {
                         return n.values[b as usize].as_ref().map(|r| (b, r));
@@ -318,26 +283,28 @@ impl<T> ByteMap<T> {
     }
 
     pub fn predecessor_mut(&mut self, byte: u8) -> Option<(u8, &mut T)> {
-        if self.is_empty() {
-            return None;
-        }
-        let len = self.len as usize;
-        match self.node {
-            Node::N4(ref mut n) => {
+        match self {
+            ByteMap::N4(len, ref mut n) => {
+                let len = *len as usize;
+                if len == 0 {
+                    return None;
+                }
                 for (i, b) in n.bytes[..len].iter().cloned().enumerate().rev() {
                     if b <= byte {
                         return n.values[i].as_mut().map(|r| (b, r));
                     }
                 }
             }
-            Node::N16(ref mut n) => {
+            ByteMap::N16(len, ref mut n) => {
+                let len = *len as usize;
                 for (i, b) in n.bytes[..len].iter().cloned().enumerate().rev() {
                     if b <= byte {
                         return n.values[i].as_mut().map(|r| (b, r));
                     }
                 }
             }
-            Node::N48(ref mut n) => {
+            ByteMap::N48(len, ref n) => {
+                let len = *len as usize;
                 for b in (0..=byte).rev() {
                     let pos = n.positions[b as usize] as usize;
                     if pos < 48 {
@@ -345,7 +312,8 @@ impl<T> ByteMap<T> {
                     }
                 }
             }
-            Node::N256(ref mut n) => {
+            ByteMap::N256(len, ref n) => {
+                let len = *len as usize;
                 for b in (0..=byte).rev() {
                     if n.values[b as usize].is_some() {
                         return n.values[b as usize].as_mut().map(|r| (b, r));
@@ -357,25 +325,29 @@ impl<T> ByteMap<T> {
     }
 
     pub fn successor(&self, byte: u8) -> Option<(u8, &T)> {
-        if self.is_empty() {
-            return None;
-        }
-        match self.node {
-            Node::N4(ref n) => {
+        match self {
+            ByteMap::N4(len, ref n) => {
+                let len = *len as usize;
+                if len == 0 {
+                    return None;
+                }
+
                 for (i, b) in n.bytes.iter().cloned().enumerate() {
                     if b >= byte {
                         return n.values[i].as_ref().map(|r| (b, r));
                     }
                 }
             }
-            Node::N16(ref n) => {
+            ByteMap::N16(len, ref n) => {
+                let len = *len as usize;
                 for (i, b) in n.bytes.iter().cloned().enumerate() {
                     if b >= byte {
                         return n.values[i].as_ref().map(|r| (b, r));
                     }
                 }
             }
-            Node::N48(ref n) => {
+            ByteMap::N48(len, ref n) => {
+                let len = *len as usize;
                 for b in byte..=255 {
                     let pos = n.positions[b as usize] as usize;
                     if pos < 48 {
@@ -383,7 +355,8 @@ impl<T> ByteMap<T> {
                     }
                 }
             }
-            Node::N256(ref n) => {
+            ByteMap::N256(len, ref n) => {
+                let len = *len as usize;
                 for b in byte..=255 {
                     if n.values[b as usize].is_some() {
                         return n.values[b as usize].as_ref().map(|r| (b, r));
@@ -395,25 +368,29 @@ impl<T> ByteMap<T> {
     }
 
     pub fn successor_mut(&mut self, byte: u8) -> Option<(u8, &mut T)> {
-        if self.is_empty() {
-            return None;
-        }
-        match self.node {
-            Node::N4(ref mut n) => {
+        match self {
+            ByteMap::N4(len, ref n) => {
+                let len = *len as usize;
+                if len == 0 {
+                    return None;
+                }
+
                 for (i, b) in n.bytes.iter().cloned().enumerate() {
                     if b >= byte {
                         return n.values[i].as_mut().map(|r| (b, r));
                     }
                 }
             }
-            Node::N16(ref mut n) => {
+            ByteMap::N16(len, ref n) => {
+                let len = *len as usize;
                 for (i, b) in n.bytes.iter().cloned().enumerate() {
                     if b >= byte {
                         return n.values[i].as_mut().map(|r| (b, r));
                     }
                 }
             }
-            Node::N48(ref mut n) => {
+            ByteMap::N48(len, ref n) => {
+                let len = *len as usize;
                 for b in byte..=255 {
                     let pos = n.positions[b as usize] as usize;
                     if pos < 48 {
@@ -421,7 +398,8 @@ impl<T> ByteMap<T> {
                     }
                 }
             }
-            Node::N256(ref mut n) => {
+            ByteMap::N256(len, ref n) => {
+                let len = *len as usize;
                 for b in byte..=255 {
                     if n.values[b as usize].is_some() {
                         return n.values[b as usize].as_mut().map(|r| (b, r));
@@ -430,6 +408,66 @@ impl<T> ByteMap<T> {
             }
         }
         None
+    }
+
+    pub fn get(&self, key: u8) -> Option<&T> {
+        match self {
+            ByteMap::N4(len, ref n) => {
+                let len = *len as usize;
+                if len == 0 {
+                    return None;
+                }
+                for (i, byte) in n.bytes[..len].iter().cloned().enumerate() {
+                    if byte == key {
+                        return n.values[i].as_ref();
+                    }
+                }
+                None
+            }
+            ByteMap::N16(len, ref n) => {
+                let len = *len as usize;
+                for (i, byte) in n.bytes[..len].iter().cloned().enumerate() {
+                    if byte == key {
+                        return n.values[i].as_ref();
+                    }
+                }
+                None
+            }
+            ByteMap::N48(_, ref n) => {
+                n.values[n.positions[key as usize] as usize].as_ref()
+            }
+            ByteMap::N256(_, ref n) => n.values[key as usize].as_ref(),
+        }
+    }
+
+    pub fn get_mut(&mut self, key: u8) -> Option<&mut T> {
+        match self {
+            ByteMap::N4(len, ref n) => {
+                let len = *len as usize;
+                if len == 0 {
+                    return None;
+                }
+                for (i, byte) in n.bytes[..len].iter().cloned().enumerate() {
+                    if byte == key {
+                        return n.values[i].as_mut();
+                    }
+                }
+                None
+            }
+            ByteMap::N16(len, ref n) => {
+                let len = *len as usize;
+                for (i, byte) in n.bytes[..len].iter().cloned().enumerate() {
+                    if byte == key {
+                        return n.values[i].as_mut();
+                    }
+                }
+                None
+            }
+            ByteMap::N48(_, ref n) => {
+                n.values[n.positions[key as usize] as usize].as_mut()
+            }
+            ByteMap::N256(_, ref n) => n.values[key as usize].as_mut(),
+        }
     }
 
     pub fn insert(&mut self, key: u8, value: T) -> Option<T> {
@@ -444,73 +482,13 @@ impl<T> ByteMap<T> {
         }
     }
 
-    pub fn get(&self, key: u8) -> Option<&T> {
-        let len = self.len as usize;
-        match self.node {
-            Node::N4(ref n) => {
-                for (i, byte) in n.bytes[..len].iter().cloned().enumerate() {
-                    if byte == key {
-                        return n.values[i].as_ref();
-                    }
-                }
-                None
-            }
-            Node::N16(ref n) => {
-                for (i, byte) in n.bytes[..len].iter().cloned().enumerate() {
-                    if byte == key {
-                        return n.values[i].as_ref();
-                    }
-                }
-                None
-            }
-            Node::N48(ref n) => {
-                n.values[n.positions[key as usize] as usize].as_ref()
-            }
-            Node::N256(ref n) => n.values[key as usize].as_ref(),
-        }
-    }
-
-    pub fn get_mut(&mut self, key: u8) -> Option<&mut T> {
-        let len = self.len as usize;
-        match self.node {
-            Node::N4(ref mut n) => {
-                for (i, byte) in n.bytes[..len].iter().cloned().enumerate() {
-                    if byte == key {
-                        return n.values[i].as_mut();
-                    }
-                }
-                None
-            }
-            Node::N16(ref mut n) => {
-                for (i, byte) in n.bytes[..len].iter().cloned().enumerate() {
-                    if byte == key {
-                        return n.values[i].as_mut();
-                    }
-                }
-                None
-            }
-            Node::N48(ref mut n) => {
-                n.values[n.positions[key as usize] as usize].as_mut()
-            }
-            Node::N256(ref mut n) => n.values[key as usize].as_mut(),
-        }
-    }
-
     pub fn entry(&mut self, key: u8) -> Entry<'_, T> {
-        // Resize if necessary
-        match (&self.node, self.len) {
-            (Node::N4(_), 4) => self.node.upsize(),
-            (Node::N16(_), 16) => self.node.upsize(),
-            (Node::N48(_), 48) => self.node.upsize(),
-            _ => {}
-        }
+        match self {
+            ByteMap::N4(len, ref n) => {
+                let len = *len as usize;
 
-        match self.node {
-            Node::N4(ref n) => {
                 let mut rank = 0;
-                for (i, byte) in
-                    n.bytes.iter().cloned().take(self.len as usize).enumerate()
-                {
+                for (i, byte) in n.bytes.iter().cloned().take(len).enumerate() {
                     if byte == key {
                         return Entry::Occupied(OccupiedEntry {
                             map: self,
@@ -528,11 +506,11 @@ impl<T> ByteMap<T> {
                     rank,
                 });
             }
-            Node::N16(ref n) => {
+            ByteMap::N16(len, ref n) => {
+                let len = *len as usize;
+
                 let mut rank = 0;
-                for (i, byte) in
-                    n.bytes.iter().cloned().take(self.len as usize).enumerate()
-                {
+                for (i, byte) in n.bytes.iter().cloned().take(len).enumerate() {
                     if byte == key {
                         return Entry::Occupied(OccupiedEntry {
                             map: self,
@@ -551,7 +529,7 @@ impl<T> ByteMap<T> {
                     rank,
                 })
             }
-            Node::N48(ref n) => {
+            ByteMap::N48(_, ref n) => {
                 if n.positions[key as usize] < 48 {
                     Entry::Occupied(OccupiedEntry {
                         map: self,
@@ -566,7 +544,7 @@ impl<T> ByteMap<T> {
                     })
                 }
             }
-            Node::N256(ref n) => {
+            ByteMap::N256(_, ref n) => {
                 if n.values[key as usize].is_some() {
                     Entry::Occupied(OccupiedEntry {
                         map: self,
@@ -583,12 +561,65 @@ impl<T> ByteMap<T> {
             }
         }
     }
+
+    fn upsize(&mut self) {
+        match self {
+            ByteMap::N4(len, ref mut n) => {
+                let mut new = Box::new(Node16 {
+                    bytes: [0; 16],
+                    values: Default::default(),
+                });
+                new.bytes[0] = n.bytes[0];
+                new.bytes[1] = n.bytes[1];
+                new.bytes[2] = n.bytes[2];
+                new.bytes[3] = n.bytes[3];
+                new.values[..4].swap_with_slice(&mut n.values);
+                *self = ByteMap::N16(*len, new);
+            }
+            ByteMap::N16(len, ref mut n) => {
+                let mut new = Box::new(Node48 {
+                    positions: [u8::max_value(); 256],
+                    values: unsafe { std::mem::zeroed() },
+                });
+
+                for i in 0..16 {
+                    new.positions[n.bytes[i as usize] as usize] = i;
+                }
+                new.values[..16].swap_with_slice(&mut n.values);
+                *self = ByteMap::N48(*len, new);
+            }
+            ByteMap::N48(len, ref mut n) => {
+                let mut new = Box::new(Node256 {
+                    values: unsafe { std::mem::zeroed() },
+                });
+
+                for i in 0..=255 {
+                    if n.positions[i] < 48 {
+                        new.values[i as usize] = std::mem::replace(
+                            &mut n.values[n.positions[i] as usize],
+                            None,
+                        );
+                    }
+                }
+                *self = ByteMap::N256(*len, new);
+            }
+            _ => {}
+        }
+    }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn test_bytemap_size() {
+        assert_eq!(
+            std::mem::size_of::<ByteMap<u32>>(),
+            3 * std::mem::size_of::<usize>()
+        );
+    }
 
     #[test]
     fn test_bytemap_insert() {
