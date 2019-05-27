@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use std::fmt::Debug;
 
 // TODO(alan): SIMD-ify
@@ -134,14 +133,6 @@ impl<T: PartialEq> PartialEq for Node256<T> {
         }
         true
     }
-}
-
-enum Ptr<'a, T> {
-    None,
-    N4(&'a Node4<T>),
-    N16(&'a Node16<T>),
-    N48(&'a Node48<T>),
-    N256(&'a Node256<T>),
 }
 
 pub enum Entry<'a, T> {
