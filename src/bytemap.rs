@@ -212,6 +212,14 @@ pub struct VacantEntry<'a, T> {
 
 impl<'a, T> VacantEntry<'a, T> {
     pub fn insert(&mut self, value: T) {
+        // Resize if necessary
+        match (&self.map.node, self.map.len) {
+            (Node::N4(_), 4) => self.map.node.upsize(),
+            (Node::N16(_), 16) => self.map.node.upsize(),
+            (Node::N48(_), 48) => self.map.node.upsize(),
+            _ => {}
+        }
+
         match self.map.node {
             Node::N4(ref mut n) => {
                 for i in ((self.rank + 1)..n.bytes.len()).rev() {
@@ -488,14 +496,6 @@ impl<T> ByteMap<T> {
     }
 
     pub fn entry(&mut self, key: u8) -> Entry<'_, T> {
-        // Resize if necessary
-        match (&self.node, self.len) {
-            (Node::N4(_), 4) => self.node.upsize(),
-            (Node::N16(_), 16) => self.node.upsize(),
-            (Node::N48(_), 48) => self.node.upsize(),
-            _ => {}
-        }
-
         match self.node {
             Node::N4(ref n) => {
                 let mut rank = 0;
