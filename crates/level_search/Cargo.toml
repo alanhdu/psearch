@@ -1,0 +1,20 @@
+[package]
+name = "level_search"
+version = "0.1.0"
+authors = ["Alan Du <alanhdu@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+fnv = '1.0'
+bytemap = { path = "../bytemap" }
+
+[dev-dependencies]
+clap = "2"
+criterion = "0.2"
+proptest = "0.9"
+rand = "0.6"
+structopt = "0.2"
+
+[[bench]]
+name = "level_search"
+harness = false

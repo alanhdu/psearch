@@ -1,31 +1,5 @@
-[package]
-name = "psearch"
-version = "0.1.0"
-authors = ["Alan Du <alanhdu@gmail.com>"]
-edition = "2018"
-
-[dependencies]
-fnv = "1.0"
-
-[dev-dependencies]
-bstr = "0.1"
-clap = "2"
-criterion = "0.2"
-rand = "0.6"
-proptest = "0.9"
-structopt = "0.2"
-
-[[bench]]
-name = "select_rank"
-harness = false
-
-[[bench]]
-name = "level_search"
-harness = false
-
-[[bench]]
-name = "succinct"
-harness = false
+[workspace]
+members = ["crates/*"]
 
 [profile.release]
 debug = true
