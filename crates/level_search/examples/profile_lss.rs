@@ -4,10 +4,7 @@ use criterion::black_box;
 use rand::{Rng, SeedableRng};
 use structopt::StructOpt;
 
-use level_search::{
-    xfast::XFastSet,
-    yfast::YFastSet,
-};
+use level_search::{xfast::XFastSet, yfast::YFastSet};
 
 #[derive(StructOpt)]
 struct Profile {

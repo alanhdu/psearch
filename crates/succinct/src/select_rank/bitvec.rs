@@ -2,8 +2,8 @@ use std::iter::FromIterator;
 
 use bit_parallel::u32x16;
 
-use crate::tree::{PackedPtr, Ptr, PtrMut};
 use super::{Bits512, SelectRank};
+use crate::tree::{PackedPtr, Ptr, PtrMut};
 
 const CAPACITY: usize = 16;
 

@@ -13,7 +13,7 @@ impl<T> ValueTree<T> {
         std::mem::replace(&mut leaf[index], value)
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item=&T> + '_ {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &T> + '_ {
         self.iter_leaf().flat_map(|leaf| leaf.iter())
     }
 }

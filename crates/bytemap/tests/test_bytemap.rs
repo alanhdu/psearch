@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
-use proptest::prelude::*;
 use bytemap::ByteMap;
+use proptest::prelude::*;
 
 proptest! {
     #[test]

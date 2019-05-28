@@ -569,7 +569,7 @@ impl<T> ByteMap<T> {
 }
 
 impl<T> FromIterator<(u8, T)> for ByteMap<T> {
-    fn from_iter<I: IntoIterator<Item=(u8, T)>>(input: I) -> ByteMap<T> {
+    fn from_iter<I: IntoIterator<Item = (u8, T)>>(input: I) -> ByteMap<T> {
         let mut map = ByteMap::new();
         for (byte, item) in input.into_iter() {
             map.insert(byte, item);

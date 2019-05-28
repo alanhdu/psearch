@@ -63,10 +63,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             random_insert!(BTreeMap<u64, usize>, u64),
             vec![100, 1000, 10000, 100000],
         )
-        .with_function(
-            "LoudsTrie",
-            random_insert!(LoudsTrie<usize>, [u8; 8]),
-        ),
+        .with_function("LoudsTrie", random_insert!(LoudsTrie<usize>, [u8; 8])),
     );
     c.bench(
         "insert_random_32_bytes",
@@ -75,10 +72,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             random_insert!(BTreeMap<[u8; 32], usize>, [u8; 32]),
             vec![100, 1000, 10000, 100000],
         )
-        .with_function(
-            "LoudsTrie",
-            random_insert!(LoudsTrie<usize>, [u8; 32]),
-        ),
+        .with_function("LoudsTrie", random_insert!(LoudsTrie<usize>, [u8; 32])),
     );
 
     // 16 MB file

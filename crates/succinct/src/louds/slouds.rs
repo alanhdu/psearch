@@ -1,8 +1,8 @@
 use std::collections::VecDeque;
 use std::iter::FromIterator;
 
-use crate::select_rank::{SBitVec, SelectRank};
 use super::louds::LoudsTrie;
+use crate::select_rank::{SBitVec, SelectRank};
 
 /// A Static LOUDS trie
 #[derive(Debug, Eq, PartialEq)]

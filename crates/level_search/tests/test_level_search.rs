@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
-use proptest::prelude::*;
 use level_search::{xfast::XFastSet, yfast::YFastSet};
+use proptest::prelude::*;
 
 proptest! {
     #[test]

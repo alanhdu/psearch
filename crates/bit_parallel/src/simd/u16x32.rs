@@ -33,11 +33,7 @@ pub fn rank(haystack: &[u16; 32], needle: u16) -> usize {
     }
 }
 
-pub fn rank_diff(
-    big: &[u16; 32],
-    small: &[u16; 32],
-    needle: u16,
-) -> usize {
+pub fn rank_diff(big: &[u16; 32], small: &[u16; 32], needle: u16) -> usize {
     unsafe {
         let needle = _mm256_set1_epi16(std::mem::transmute::<u16, i16>(needle));
         let haystack1 = _mm256_sub_epi16(loadu(big), loadu(small));

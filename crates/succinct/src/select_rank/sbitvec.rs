@@ -32,13 +32,12 @@ impl SBitVec {
         self.len
     }
 
-    pub fn iter(&self) -> impl Iterator<Item=bool> + '_ {
-        (0..self.len())
-            .map(move |i| {
-                let block_index = i / 64;
-                let bit_index = i % 64;
-                self.blocks[block_index] & (1 << bit_index) != 0
-            })
+    pub fn iter(&self) -> impl Iterator<Item = bool> + '_ {
+        (0..self.len()).map(move |i| {
+            let block_index = i / 64;
+            let bit_index = i % 64;
+            self.blocks[block_index] & (1 << bit_index) != 0
+        })
     }
 }
 
